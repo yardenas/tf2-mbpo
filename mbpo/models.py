@@ -40,6 +40,25 @@ class WorldModel(tf.Module):
             terminal=tfd.Bernoulli(logits=self._terminal_logit(x), dtype=tf.float32))
 
 
+# class WorldModelEnsemble(tf.Module):
+#     def __init__(self, ensemble_size, dynamics_size, dynamics_layers, units, reward_layers=1,
+#                  terminal_layers=1,
+#                  min_stddev=1e-4,
+#                  activation=tf.nn.relu):
+#         super().__init__()
+#         self._ensemble = [WorldModel(
+#             dynamics_size,
+#             dynamics_layers,
+#             units, reward_layers, terminal_layers, min_stddev, activation)
+#             for _ in range(ensemble_size)]
+#
+#     def __call__(self, observation, action):
+#         states = []
+#         rewards = []
+#         terminals = []
+#         for model in self._ensemble:
+
+
 class Actor(tf.Module):
     def __init__(self, size, layers, units, min_stddev=1e-4, activation=tf.nn.relu):
         super().__init__()

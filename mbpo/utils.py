@@ -9,7 +9,7 @@ from gym.wrappers import RescaleAction
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 
-from mbpo.env_wrappers import ActionRepeat, ObservationNormalize, TestObservationNormalize
+from mbpo.env_wrappers import ActionRepeat
 
 
 # Following https://github.com/tensorflow/probability/issues/840 and
@@ -141,9 +141,9 @@ def make_env(name, episode_length, action_repeat, seed):
     env = ActionRepeat(env, action_repeat)
     env = RescaleAction(env, -1.0, 1.0)
     env.seed(seed)
-    #train_env = ObservationNormalize(env)
-    #test_env = TestObservationNormalize(env, train_env.normalize)
-    #return train_env, test_env
+    # train_env = ObservationNormalize(env)
+    # test_env = TestObservationNormalize(env, train_env.normalize)
+    # return train_env, test_env
     return env, env
 
 
@@ -171,8 +171,8 @@ def evaluate_model(episodes_summaries, agent):
             predicted_rollouts['reward'].numpy() -
             episodes_summaries[i]['reward'][-prediction_horizon:]) ** 2).mean() / n_episodes
         terminal_accuracy += (1.0 - (np.abs(predicted_rollouts['terminal'] -
-                                     episodes_summaries[i]['terminal'][-prediction_horizon:])
-                              < 1e-5)).mean() / n_episodes
+                                            episodes_summaries[i]['terminal'][-prediction_horizon:])
+                                     < 1e-5)).mean() / n_episodes
     return dict(observations_mse=observations_mse,
                 rewards_mse=rewards_mse,
                 terminal_accuracy=terminal_accuracy)

@@ -13,7 +13,7 @@ setup(
         'gym~=0.15.3',
         'mujoco_py==2.0.2.7',
         'numpy~=1.17.4',
-        'tensorflow==2.2.0',
+        'tensorflow==2.3.0',
         'tensorflow-probability==0.10.0',
         'tensorflow-addons',
         'moviepy>=1.0.0',

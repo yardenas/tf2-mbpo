@@ -5,6 +5,7 @@ import tensorflow as tf
 from tqdm import tqdm
 
 import mbpo.models as models
+from mbpo.cem_actor import CemActor
 from mbpo.replay_buffer import ReplayBuffer
 
 
@@ -29,6 +30,7 @@ class MBPO(tf.Module):
         )
         self._warmup_policy = lambda: np.random.uniform(action_space.low, action_space.high)
         self._actor = models.Actor(action_space.shape[0], 3, self._config.units)
+        self._debug_actor = CemActor(self.imagine_rollouts, self.ensemble)
         self._actor_optimizer = tf.keras.optimizers.Adam(
             learning_rate=self._config.actor_learning_rate, clipnorm=self._config.grad_clip_norm,
             epsilon=1e-5
@@ -95,6 +97,7 @@ class MBPO(tf.Module):
             observation = tf.where(done_rollout,
                                    observation,
                                    predictions['next_observation'].sample())
+            tf.print("action is: ", observation[0])
             rollouts['next_observation'] = rollouts['next_observation'].write(k, observation)
             terminal = tf.where(done_rollout,
                                 1.0,
@@ -182,9 +185,9 @@ class MBPO(tf.Module):
             -10.0, 10.0)
         if training:
             if self.warm:
-                # action = self._actor(
-                #     np.expand_dims(observation, axis=0).astype(np.float32)).sample().numpy()
-                action = self.debug_actor(tf.constant(scaled_obs, dtype=tf.float32)).numpy()
+                action = self._actor(
+                    np.expand_dims(observation, axis=0).astype(np.float32)).sample().numpy()
+                # action = self._debug_actor(tf.constant(scaled_obs, dtype=tf.float32)).numpy()
             else:
                 action = self._warmup_policy()
             if self.time_to_update and self.warm:
@@ -198,50 +201,9 @@ class MBPO(tf.Module):
                         tf.constant(batch['observation'], dtype=tf.float32),
                         random.choice(self.ensemble))
         else:
-            # action = self._actor(
-            #     np.expand_dims(observation, axis=0).astype(np.float32)).mode().numpy()
-            action = self.debug_actor(tf.constant(scaled_obs, dtype=tf.float32)).numpy()
+            action = self._actor(
+                np.expand_dims(observation, axis=0).astype(np.float32)).mode().numpy()
+            # action = self._debug_actor(tf.constant(scaled_obs, dtype=tf.float32)).numpy()
         if self.time_to_log and training and self.warm:
             self._logger.log_metrics(self._training_step)
-        return action
-
-    @tf.function
-    def debug_actor(self, observation):
-        action_dim = 1
-        mu = tf.zeros((8, action_dim))
-        sigma = tf.ones_like(mu)
-        best_so_far = tf.zeros((action_dim,), dtype=tf.float32)
-        best_so_far_score = -np.inf * tf.ones((), dtype=tf.float32)
-        for _ in tf.range(10):
-            action_sequences = tf.random.normal(
-                shape=(150, 8, action_dim),
-                mean=mu, stddev=sigma
-            )
-            # TODO (yarden): average over particles!!!
-            action_sequences = tf.clip_by_value(action_sequences, -1.0, 1.0)
-            action_sequences_batch = action_sequences
-            all_rewards = []
-            for model in self.ensemble:
-                trajectories = self.imagine_rollouts(
-                    tf.broadcast_to(observation,
-                                    (action_sequences_batch.shape[0], observation.shape[0])),
-                    model,
-                    tf.transpose(action_sequences_batch, [1, 0, 2])
-                )
-                all_rewards.append(tf.reduce_sum(
-                    trajectories['reward'] * (1.0 - trajectories['terminal']), axis=1))
-            scores = tf.squeeze(tf.reduce_mean(tf.stack(all_rewards, axis=0), axis=0))
-            elite_scores, elite = tf.nn.top_k(scores, 10, sorted=False)
-            best_of_elite = tf.argmax(elite_scores)
-            if tf.greater(elite_scores[best_of_elite], best_so_far_score):
-                best_so_far = action_sequences[elite[best_of_elite], 0, ...]
-                best_so_far_score = elite_scores[best_of_elite]
-            elite_actions = tf.gather(action_sequences, elite, axis=0)
-            mean, variance = tf.nn.moments(elite_actions, axes=0)
-            mu = mean
-            sigma = tf.sqrt(variance)
-            if tf.less_equal(tf.reduce_mean(sigma), 0.1):
-                break
-        return tf.clip_by_value(
-            best_so_far + tf.random.normal(best_so_far.shape, stddev=0.01),
-            -1.0, 1.0)
+        return np.clip(action, -1.0, 1.0)
