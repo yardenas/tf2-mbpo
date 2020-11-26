@@ -190,3 +190,8 @@ def pretty_print(config, indent=0):
 def dump_string(string, filename):
     with open(filename, 'w+') as file:
         file.write(string)
+
+
+def clone_model(a, b):
+    for var_a, var_b in zip(a.variables, b.variables):
+        var_b.assign(var_b)

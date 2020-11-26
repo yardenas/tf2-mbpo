@@ -6,6 +6,7 @@ import tensorflow_probability as tfp
 from tqdm import tqdm
 
 import mbpo.models as models
+import mbpo.utils as utils
 from mbpo.cem_actor import CemActor
 from mbpo.replay_buffer import ReplayBuffer
 
@@ -38,6 +39,9 @@ class MBPO(tf.Module):
         )
         self._critic = models.Critic(
             3, self._config.units, output_regularization=self._config.critic_regularization)
+        self._delayed_critic = models.Critic(
+            3, self._config.units, output_regularization=self._config.critic_regularization)
+        utils.clone_model(self._critic, self._delayed_critic)
         self._critic_optimizer = tf.keras.optimizers.Adam(
             learning_rate=self._config.critic_learning_rate, clipnorm=self._config.grad_clip_norm,
             epsilon=1e-5
@@ -120,12 +124,13 @@ class MBPO(tf.Module):
                                                         rollouts['reward'], \
                                                         rollouts['terminal']
         lambda_values = tf.TensorArray(tf.float32, self._config.horizon)
-        v_lambda = self._critic(next_observation[:, -1, ...]).mode() * (1.0 - terminals[:, -1])
+        v_lambda = self._delayed_critic(next_observation[:, -1, ...]).mode() * (
+                1.0 - terminals[:, -1])
         # reverse traversing over data.
         for t in tf.range(self._config.horizon - 1, -1, -1):
             td = rewards[:, t] + \
                  (1.0 - terminals[:, t]) * (1.0 - self._config.lambda_) * \
-                 self._config.discount * self._critic(next_observation[:, t, ...]).mode()
+                 self._config.discount * self._delayed_critic(next_observation[:, t, ...]).mode()
             v_lambda = td + v_lambda * self._config.lambda_ * self._config.discount
             lambda_values = lambda_values.write(t, v_lambda)
         return tf.transpose(lambda_values.stack(), [1, 0, 2])
@@ -178,19 +183,22 @@ class MBPO(tf.Module):
     def warm(self):
         return self._training_step >= self._config.warmup_training_steps
 
+    @property
+    def time_to_clone_critic(self):
+        return self._training_step and \
+               self._training_step % self._config.steps_per_critic_clone < \
+               self._config.action_repeat
+
     def observe(self, transition):
         self._training_step += transition.pop('steps', self._config.action_repeat)
         self._experience.store(transition)
 
     def __call__(self, observation, training=True):
-        scaled_obs = np.clip(
-            (observation - self._experience.obs_mean) / self._experience.obs_stddev,
-            -10.0, 10.0)
         if training:
             if self.warm:
-                action = self._actor(
-                    np.expand_dims(observation, axis=0).astype(np.float32)).sample().numpy()
-                # action = self._debug_actor(tf.constant(scaled_obs, dtype=tf.float32)).numpy()
+                # action = self._actor(
+                #     np.expand_dims(observation, axis=0).astype(np.float32)).sample().numpy()
+                action = self._debug_actor(tf.constant(observation, dtype=tf.float32)).numpy()
             else:
                 action = self._warmup_policy()
             if self.time_to_update and self.warm:
@@ -203,10 +211,12 @@ class MBPO(tf.Module):
                     self.update_actor_critic(
                         tf.constant(batch['observation'], dtype=tf.float32),
                         random.choice(self.ensemble))
+                if self.time_to_clone_critic:
+                    utils.clone_model(self._critic, self._delayed_critic)
         else:
-            action = self._actor(
-                np.expand_dims(observation, axis=0).astype(np.float32)).mode().numpy()
-            # action = self._debug_actor(tf.constant(scaled_obs, dtype=tf.float32)).numpy()
+            # action = self._actor(
+            # np.expand_dims(observation, axis=0).astype(np.float32)).mode().numpy()
+            action = self._debug_actor(tf.constant(observation, dtype=tf.float32)).numpy()
         if self.time_to_log and training and self.warm:
             self._logger.log_metrics(self._training_step)
         return np.clip(action, -1.0, 1.0)

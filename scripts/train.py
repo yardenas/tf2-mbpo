@@ -17,6 +17,7 @@ def define_config():
         'discount': 0.99,
         'lambda_': 0.95,
         'steps_per_update': 1000,
+        'steps_per_critic_clone': 5000,
         # This batch size is split evenly among world models in the ensemble but gets as a whole
         # for the actor critic. This *might* reduce the high variance of the actor-critic and
         # still be not too large batch size for the model.
