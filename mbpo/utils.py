@@ -9,7 +9,7 @@ from gym.wrappers import RescaleAction
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 
-from mbpo.env_wrappers import ActionRepeat
+from mbpo.env_wrappers import ActionRepeat, TestObservationNormalize, ObservationNormalize
 
 
 # Following https://github.com/tensorflow/probability/issues/840 and
@@ -84,8 +84,8 @@ class TrainingLogger(object):
         self._writer.flush()
 
 
-def do_episode(agent, training, environment, config, pbar, render):
-    observation = environment.reset()
+def do_episode(agent, training, environment, config, pbar, render, reset_function=None):
+    observation = environment.reset() if reset_function is None else reset_function()
     episode_summary = defaultdict(list)
     steps = 0
     done = False
@@ -141,10 +141,9 @@ def make_env(name, episode_length, action_repeat, seed):
     env = ActionRepeat(env, action_repeat)
     env = RescaleAction(env, -1.0, 1.0)
     env.seed(seed)
-    # train_env = ObservationNormalize(env)
-    # test_env = TestObservationNormalize(env, train_env.normalize)
-    # return train_env, test_env
-    return env, env
+    train_env = ObservationNormalize(env)
+    test_env = TestObservationNormalize(env, train_env.normalize)
+    return train_env, test_env
 
 
 # Reading the errors produced by this function should assume all obsersvations are normalized to
@@ -194,4 +193,4 @@ def dump_string(string, filename):
 
 def clone_model(a, b):
     for var_a, var_b in zip(a.variables, b.variables):
-        var_b.assign(var_b)
+        var_b.assign(var_a)

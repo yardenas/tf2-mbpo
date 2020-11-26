@@ -50,7 +50,7 @@ def define_config():
     }
 
 
-def main(config):
+def train(config):
     logger = utils.TrainingLogger(config)
     random.seed(config.seed)
     tf.random.set_seed(config.seed)
@@ -81,12 +81,17 @@ def main(config):
         if config.debug_model:
             eval_summary.update(utils.evaluate_model(evaluation_episodes_summaries, agent))
         logger.log_evaluation_summary(eval_summary, steps)
+    return agent, test_env
 
 
-if __name__ == '__main__':
+def make_config():
     parser = argparse.ArgumentParser()
     for key, value in define_config().items():
         parser.add_argument('--{}'.format(key), type=type(value) if value else str, default=value)
-    config = parser.parse_args()
+    return parser.parse_args()
+
+
+if __name__ == '__main__':
+    config = make_config()
     os.environ['CUDA_VISIBLE_DEVICES'] = config.cuda_device
-    main(config)
+    train(config)

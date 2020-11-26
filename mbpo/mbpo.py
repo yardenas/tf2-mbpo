@@ -35,11 +35,11 @@ class MBPO(tf.Module):
             learning_rate=self._config.actor_learning_rate, clipnorm=self._config.grad_clip_norm,
             epsilon=1e-5
         )
-        self._critic = models.Critic(
+        self.critic = models.Critic(
             3, self._config.units, output_regularization=self._config.critic_regularization)
         self._delayed_critic = models.Critic(
             3, self._config.units, output_regularization=self._config.critic_regularization)
-        utils.clone_model(self._critic, self._delayed_critic)
+        utils.clone_model(self.critic, self._delayed_critic)
         self._critic_optimizer = tf.keras.optimizers.Adam(
             learning_rate=self._config.critic_learning_rate, clipnorm=self._config.grad_clip_norm,
             epsilon=1e-5
@@ -160,11 +160,11 @@ class MBPO(tf.Module):
     def _critic_grad_step(self, lambda_values, observations, terminals, critic_tape):
         critic_loss = 0.0
         for t in tf.range(self._config.horizon):
-            critic_loss -= tf.reduce_mean(self._critic(observations[:, t, ...])
+            critic_loss -= tf.reduce_mean(self.critic(observations[:, t, ...])
                                           .log_prob(tf.stop_gradient(lambda_values[:, t, ...])) *
                                           tf.stop_gradient(1.0 - terminals[:, t, ...]))
-        grads = critic_tape.gradient(critic_loss, self._critic.trainable_variables)
-        self._critic_optimizer.apply_gradients(zip(grads, self._critic.trainable_variables))
+        grads = critic_tape.gradient(critic_loss, self.critic.trainable_variables)
+        self._critic_optimizer.apply_gradients(zip(grads, self.critic.trainable_variables))
         return critic_loss, tf.linalg.global_norm(grads)
 
     @property
@@ -209,7 +209,7 @@ class MBPO(tf.Module):
                         tf.constant(batch['observation'], dtype=tf.float32),
                         random.choice(self.ensemble))
                 if self.time_to_clone_critic:
-                    utils.clone_model(self._critic, self._delayed_critic)
+                    utils.clone_model(self.critic, self._delayed_critic)
         else:
             action = self._actor(
                 np.expand_dims(observation, axis=0).astype(np.float32)).mode().numpy()

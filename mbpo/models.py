@@ -68,7 +68,7 @@ class Actor(tf.Module):
         self._mu = tf.keras.layers.Dense(size)
         self._stddev = tf.keras.layers.Dense(
             size,
-            activation=lambda t: tf.math.softplus(t) + min_stddev)
+            activation=lambda t: tf.math.softplus(t + 5) + min_stddev)
 
     def __call__(self, observation):
         x = self._policy(observation)
@@ -84,11 +84,10 @@ class Critic(tf.Module):
     def __init__(self, layers, units, activation=tf.nn.relu, output_regularization=1e-3):
         super().__init__()
         self._action_value = tf.keras.Sequential(
-            [tf.keras.layers.Dense(units=units, activation=activation) for _ in range(layers)]
+            [tf.keras.layers.Dense(units=units, activation=activation) for _ in range(layers)] +
+            [tf.keras.layers.Dense(units=1, activity_regularizer=tf.keras.regularizers.l2(
+                output_regularization))]
         )
-        self._action_value.layers.append(
-            tf.keras.layers.Dense(units=1, activity_regularizer=tf.keras.regularizers.l2(
-                output_regularization)))
 
     def __call__(self, observation):
         mu = self._action_value(observation)
