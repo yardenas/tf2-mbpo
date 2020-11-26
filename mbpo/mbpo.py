@@ -2,6 +2,7 @@ import random
 
 import numpy as np
 import tensorflow as tf
+import tensorflow_probability as tfp
 from tqdm import tqdm
 
 import mbpo.models as models
@@ -41,6 +42,7 @@ class MBPO(tf.Module):
             learning_rate=self._config.critic_learning_rate, clipnorm=self._config.grad_clip_norm,
             epsilon=1e-5
         )
+        self._rng = tf.random.Generator.from_seed(self._config.seed)
 
     def update_model(self, batch):
         self._model_grad_step(batch)
@@ -86,9 +88,11 @@ class MBPO(tf.Module):
                     'terminal': tf.TensorArray(tf.float32, size=horizon)}
         done_rollout = tf.zeros((tf.shape(sampled_observations)[0], 1), dtype=tf.bool)
         observation = sampled_observations
+        seeds = tf.cast(self._rng.make_seeds(horizon), tf.int32)
         for k in tf.range(horizon if actions is None else tf.shape(actions)[0]):
+            action_seeds, obs_seeds = tfp.random.split_seed(seeds[:, k], 2, "imagine_rollouts")
             rollouts['observation'] = rollouts['observation'].write(k, observation)
-            action = self._actor(tf.stop_gradient(observation)).sample() \
+            action = self._actor(tf.stop_gradient(observation)).sample(seed=action_seeds) \
                 if actions is None else actions[k, ...]
             rollouts['action'] = rollouts['action'].write(k, action)
             predictions = bootstrap(observation, action)
@@ -96,8 +100,7 @@ class MBPO(tf.Module):
             # possibly valid state.
             observation = tf.where(done_rollout,
                                    observation,
-                                   predictions['next_observation'].sample())
-            tf.print("action is: ", observation[0])
+                                   predictions['next_observation'].sample(seed=obs_seeds))
             rollouts['next_observation'] = rollouts['next_observation'].write(k, observation)
             terminal = tf.where(done_rollout,
                                 1.0,
