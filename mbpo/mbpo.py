@@ -30,7 +30,8 @@ class MBPO(tf.Module):
             epsilon=1e-5
         )
         self._warmup_policy = lambda: np.random.uniform(action_space.low, action_space.high)
-        self._actor = models.Actor(action_space.shape[0], 3, self._config.units)
+        self._actor = models.Actor(action_space.shape[0], 3, self._config.units,
+                                   seed=self._config.seed)
         self._actor_optimizer = tf.keras.optimizers.Adam(
             learning_rate=self._config.actor_learning_rate, clipnorm=self._config.grad_clip_norm,
             epsilon=1e-5
@@ -211,8 +212,9 @@ class MBPO(tf.Module):
                 if self.time_to_clone_critic:
                     utils.clone_model(self.critic, self._delayed_critic)
         else:
-            action = self._actor(
-                np.expand_dims(observation, axis=0).astype(np.float32)).mode().numpy()
+            # action = self._actor(
+            # np.expand_dims(observation, axis=0).astype(np.float32)).mode().numpy()
+            action = 1.0
         if self.time_to_log and training and self.warm:
             self._logger.log_metrics(self._training_step)
         return np.clip(action, -1.0, 1.0)

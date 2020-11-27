@@ -27,9 +27,12 @@ class StableTanhBijector(tfp.bijectors.Tanh):
 
 
 class SampleDist(object):
-    def __init__(self, dist, samples=100):
+    def __init__(self, dist, seed, samples=500):
         self._dist = dist
         self._samples = samples
+        # Use a stateless seed to get the same samples everytime -
+        # this simulates the fact that the mean, entropy and mode are deterministic.
+        self._seed = (0, seed)
 
     @property
     def name(self):
@@ -39,16 +42,16 @@ class SampleDist(object):
         return getattr(self._dist, name)
 
     def mean(self):
-        samples = self._dist.sample(self._samples)
+        samples = self._dist.sample(self._samples, seed=self._seed)
         return tf.reduce_mean(samples, 0)
 
     def mode(self):
-        sample = self._dist.sample(self._samples)
+        sample = self._dist.sample(self._samples, seed=self._seed)
         logprob = self._dist.log_prob(sample)
         return tf.gather(sample, tf.argmax(logprob))[0]
 
     def entropy(self):
-        sample = self._dist.sample(self._samples)
+        sample = self._dist.sample(self._samples, seed=self._seed)
         logprob = self.log_prob(sample)
         return -tf.reduce_mean(logprob, 0)
 

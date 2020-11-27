@@ -60,7 +60,7 @@ class WorldModel(tf.Module):
 
 
 class Actor(tf.Module):
-    def __init__(self, size, layers, units, min_stddev=1e-4, activation=tf.nn.relu):
+    def __init__(self, size, layers, units, seed, min_stddev=1e-4, activation=tf.nn.relu):
         super().__init__()
         self._policy = tf.keras.Sequential(
             [tf.keras.layers.Dense(units=units, activation=activation) for _ in range(layers)]
@@ -69,6 +69,7 @@ class Actor(tf.Module):
         self._stddev = tf.keras.layers.Dense(
             size,
             activation=lambda t: tf.math.softplus(t + 5) + min_stddev)
+        self._seed = seed
 
     def __call__(self, observation):
         x = self._policy(observation)
@@ -77,7 +78,7 @@ class Actor(tf.Module):
             scale_diag=self._stddev(x))
         # Squash actions to [-1, 1]
         squashed = tfd.TransformedDistribution(multivariate_normal_diag, utils.StableTanhBijector())
-        return utils.SampleDist(squashed)
+        return utils.SampleDist(squashed, seed=self._seed)
 
 
 class Critic(tf.Module):

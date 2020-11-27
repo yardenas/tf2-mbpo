@@ -17,11 +17,17 @@ def plot_values(values):
     plt.show()
 
 
+def discounted_cum_sum(rewards, gamma):
+    discounts = np.logspace(0, len(rewards), len(rewards), base=gamma, endpoint=False)
+    discounted_rewards = discounts * np.array(rewards, copy=False)
+    return np.sum(discounted_rewards)
+
+
 def values_monte_carlo_estimate(agent, test_env, config, num_episodes, thetas, dthetas):
     def reset_to_state(theta, dtheta):
-        test_env.state = (theta, dtheta)
-        test_env.last_u = None
-        return np.array([np.cos(theta), np.sin(theta), dtheta])
+        test_env.reset()
+        test_env.unwrapped.state = (theta, dtheta)
+        return test_env.observation(np.array([np.cos(theta), np.sin(theta), dtheta]))
 
     pbar = tqdm(total=thetas.shape[0] * dthetas.shape[0] * num_episodes)
     return_samples = np.empty([num_episodes, thetas.shape[0] * dthetas.shape[0]])
@@ -32,10 +38,11 @@ def values_monte_carlo_estimate(agent, test_env, config, num_episodes, thetas, d
                 _, episode_summary = utils.do_episode(
                     agent, training=False, environment=test_env,
                     config=config,
-                    pbar=pbar, render=False,
+                    pbar=pbar, render=True,
                     reset_function=lambda: reset_to_state(theta,
                                                           dtheta))
-                return_samples[episode, state_id] = sum(episode_summary['reward'])
+                return_samples[episode, state_id] = discounted_cum_sum(episode_summary['reward'],
+                                                                       config.discount)
             state_id += 1
     pbar.close()
     return return_samples
@@ -46,8 +53,8 @@ def plot_values_density(value_predictions, monte_carlo_estimation):
     x = monte_carlo_estimation.ravel()
     y = np.repeat(value_predictions, monte_carlo_estimation.shape[0], axis=0).ravel()
     kernel = st.gaussian_kde(np.vstack([x, y]))
-    delta_x = (max(x) - min(x)) / 10
-    delta_y = (max(y) - min(y)) / 10
+    delta_x = (max(x) - min(x)) / 1
+    delta_y = (max(y) - min(y)) / 1
     xmin = min(x) - delta_x
     xmax = max(x) + delta_x
     ymin = min(y) - delta_y
@@ -70,8 +77,8 @@ def plot_values_density(value_predictions, monte_carlo_estimation):
 def main():
     config = train_utils.make_config()
     config.environment = 'Pendulum-v0'
-    n_theta = 5
-    n_dtheta = 5
+    n_theta = 1
+    n_dtheta = 1
     # https://github.com/openai/gym/blob/master/gym/envs/classic_control/pendulum.py
     max_speed = 8
     thetas = np.linspace(-np.pi, np.pi, n_theta)
@@ -90,6 +97,7 @@ def main():
     plot_values(predicted_values.reshape([n_theta, n_dtheta]))
     monte_carlo_estimates = values_monte_carlo_estimate(trained_agent, test_env, config, 5, thetas,
                                                         dthetas)
+    print(monte_carlo_estimates)
     plot_values_density(predicted_values, monte_carlo_estimates)
 
 
