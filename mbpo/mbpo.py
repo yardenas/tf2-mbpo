@@ -123,10 +123,10 @@ class MBPO(tf.Module):
                                                         rollouts['reward'], \
                                                         rollouts['terminal']
         lambda_values = tf.TensorArray(tf.float32, self._config.horizon)
-        v_lambda = self._delayed_critic(next_observation[:, -1, ...]).mode() * (
-                1.0 - terminals[:, -1])
+        v_lambda = self._delayed_critic(next_observation[:, -1, ...]).mode() * \
+                   (1.0 - terminals[:, -1])
         # reverse traversing over data.
-        for t in tf.range(self._config.horizon - 1, -1, -1):
+        for t in tf.range(start=self._config.horizon - 1, limit=-1, delta=-1):
             td = rewards[:, t] + \
                  (1.0 - terminals[:, t]) * (1.0 - self._config.lambda_) * \
                  self._config.discount * self._delayed_critic(next_observation[:, t, ...]).mode()
@@ -212,9 +212,8 @@ class MBPO(tf.Module):
                 if self.time_to_clone_critic:
                     utils.clone_model(self.critic, self._delayed_critic)
         else:
-            # action = self._actor(
-            # np.expand_dims(observation, axis=0).astype(np.float32)).mode().numpy()
-            action = 1.0
+            action = self._actor(
+                np.expand_dims(observation, axis=0).astype(np.float32)).mode().numpy()
         if self.time_to_log and training and self.warm:
             self._logger.log_metrics(self._training_step)
         return np.clip(action, -1.0, 1.0)

@@ -21,7 +21,7 @@ def define_config():
         # This batch size is split evenly among world models in the ensemble but gets as a whole
         # for the actor critic. This *might* reduce the high variance of the actor-critic and
         # still be not too large batch size for the model.
-        'batch_size': 320,
+        'batch_size': 2500,
         'warmup_training_steps': 5000,
         # MODELS
         'dynamics_layers': 4,
