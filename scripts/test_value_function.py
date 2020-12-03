@@ -94,7 +94,7 @@ def main():
     monte_carlo_estimates = np.empty([n_experiments, all_states.shape[0]])
     for i in range(n_experiments):
         trained_agent, test_env = train_utils.train(config)
-        value_predictions[i, :] = trained_agent.critic(all_states) \
+        value_predictions[i, :] = trained_agent.critic(all_states[:, None, :]) \
             .mode() \
             .numpy() \
             .squeeze()

@@ -7,6 +7,7 @@ from tqdm import tqdm
 
 import mbpo.models as models
 import mbpo.utils as utils
+from mbpo.cem_actor import CemActor
 from mbpo.replay_buffer import ReplayBuffer
 
 
@@ -32,6 +33,7 @@ class MBPO(tf.Module):
         self._warmup_policy = lambda: np.random.uniform(action_space.low, action_space.high)
         self._actor = models.Actor(action_space.shape[0], 3, self._config.units,
                                    seed=self._config.seed)
+        self._dbug_actor = CemActor(self.imagine_rollouts, self.ensemble)
         self._actor_optimizer = tf.keras.optimizers.Adam(
             learning_rate=self._config.actor_learning_rate, clipnorm=self._config.grad_clip_norm,
             epsilon=1e-5
@@ -61,12 +63,11 @@ class MBPO(tf.Module):
         loss = 0.0
         with tf.GradientTape() as model_tape:
             for i, world_model in enumerate(self.ensemble):
-                observations, target_next_observations, \
-                actions, target_rewards, target_terminals = \
-                    bootstraps_batches['observation'][i], \
-                    bootstraps_batches['next_observation'][i], \
-                    bootstraps_batches['action'][i], bootstraps_batches['reward'][i], \
-                    bootstraps_batches['terminal'][i]
+                observations = bootstraps_batches['observation'][i]
+                target_next_observations = bootstraps_batches['next_observation'][i]
+                actions = bootstraps_batches['action'][i]
+                target_rewards = bootstraps_batches['reward'][i]
+                target_terminals = bootstraps_batches['terminal'][i]
                 predictions = world_model(observations, actions)
                 log_p_dynamics = tf.reduce_mean(
                     predictions['next_observation'].log_prob(target_next_observations))
@@ -89,19 +90,19 @@ class MBPO(tf.Module):
                     'action': tf.TensorArray(tf.float32, size=horizon),
                     'reward': tf.TensorArray(tf.float32, size=horizon),
                     'terminal': tf.TensorArray(tf.float32, size=horizon)}
-        done_rollout = tf.zeros((tf.shape(sampled_observations)[0], 1), dtype=tf.bool)
+        done_rollout = tf.zeros((tf.shape(sampled_observations)[0]), dtype=tf.bool)
         observation = sampled_observations
         seeds = tf.cast(self._rng.make_seeds(horizon), tf.int32)
         for k in tf.range(horizon if actions is None else tf.shape(actions)[0]):
             action_seeds, obs_seeds = tfp.random.split_seed(seeds[:, k], 2, "imagine_rollouts")
             rollouts['observation'] = rollouts['observation'].write(k, observation)
-            action = self._actor(tf.stop_gradient(observation)).sample(seed=action_seeds) \
-                if actions is None else actions[k, ...]
+            action = self._actor(tf.stop_gradient(observation)).sample(
+                seed=action_seeds) if actions is None else actions[k, ...]
             rollouts['action'] = rollouts['action'].write(k, action)
             predictions = bootstrap(observation, action)
             # If the rollout is done, we stay at the terminal state, not overriding with a new,
             # possibly valid state.
-            observation = tf.where(done_rollout,
+            observation = tf.where(done_rollout[:, None],
                                    observation,
                                    predictions['next_observation'].sample(seed=obs_seeds))
             rollouts['next_observation'] = rollouts['next_observation'].write(k, observation)
@@ -115,55 +116,59 @@ class MBPO(tf.Module):
             rollouts['reward'] = rollouts['reward'].write(k, reward)
             done_rollout = tf.logical_or(
                 tf.cast(terminal, tf.bool), done_rollout)
-        return {k: tf.transpose(v.stack(), [1, 0, 2]) for k, v in rollouts.items()}
 
-    def compute_lambda_values(self, rollouts):
-        next_observation, actions, rewards, terminals = rollouts['next_observation'], \
-                                                        rollouts['action'], \
-                                                        rollouts['reward'], \
-                                                        rollouts['terminal']
+        def standardize_shapes(tensor_array):
+            stacked = tensor_array.stack()
+            if len(tf.shape(stacked)) == 2:
+                return tf.transpose(tf.squeeze(stacked))
+            else:
+                return tf.transpose(stacked, [1, 0, 2])
+
+        return {k: standardize_shapes(v) for k, v in rollouts.items()}
+
+    def compute_lambda_values(self, next_observations, action, rewards, terminals):
         lambda_values = tf.TensorArray(tf.float32, self._config.horizon)
-        v_lambda = self._delayed_critic(next_observation[:, -1, ...]).mode() * \
-                   (1.0 - terminals[:, -1])
+        next_values = self._delayed_critic(next_observation).mode()
+        v_lambda = next_values[:, -1] * (1.0 - terminals[:, -1])
         # reverse traversing over data.
         for t in tf.range(start=self._config.horizon - 1, limit=-1, delta=-1):
-            td = rewards[:, t] + \
-                 (1.0 - terminals[:, t]) * (1.0 - self._config.lambda_) * \
-                 self._config.discount * self._delayed_critic(next_observation[:, t, ...]).mode()
+            td = rewards[:, t] + (1.0 - terminals[:, t]) * (
+                    1.0 - self._config.lambda_) * self._config.discount * next_values[:, t]
             v_lambda = td + v_lambda * self._config.lambda_ * self._config.discount
             lambda_values = lambda_values.write(t, v_lambda)
-        return tf.transpose(lambda_values.stack(), [1, 0, 2])
+        return tf.transpose(lambda_values.stack())
 
     @tf.function
     def update_actor_critic(self, observation, model_bootstrap):
+        discount = tf.math.cumprod(
+            self._config.discount * tf.ones([self._config.horizon]), exclusive=True)
         with tf.GradientTape() as actor_tape:
             imagined_rollouts = self.imagine_rollouts(observation, model_bootstrap)
-            lambda_values = self.compute_lambda_values(imagined_rollouts)
-            actor_loss, actor_grads = self._actor_grad_step(
-                lambda_values, imagined_rollouts['terminal'], actor_tape)
+            lambda_values = self.compute_lambda_values(
+                imagined_rollouts['next_observation'],
+                imagined_rollouts['action'],
+                imagined_rollouts['reward'],
+                imagined_rollouts['terminal'])
+            actor_loss, actor_grads = self._actor_grad_step(lambda_values, discount, actor_tape)
         with tf.GradientTape() as critic_tape:
             critic_loss, critic_grads = self._critic_grad_step(
-                lambda_values, imagined_rollouts['observation'], imagined_rollouts['terminal'],
-                critic_tape)
+                lambda_values, imagined_rollouts['observation'], discount, critic_tape)
         self._logger['actor_loss'].update_state(actor_loss)
         self._logger['actor_grads'].update_state(tf.norm(actor_grads))
         self._logger['critic_loss'].update_state(critic_loss)
         self._logger['critic_grads'].update_state(tf.norm(critic_grads))
         self._logger['pi_entropy'].update_state(self._actor(observation).entropy())
 
-    def _actor_grad_step(self, lambda_values, terminals, actor_tape):
+    def _actor_grad_step(self, lambda_values, discount, actor_tape):
         actor_loss = -tf.reduce_mean(
-            tf.reduce_sum(lambda_values * (1.0 - terminals), axis=1))
+            tf.reduce_sum(lambda_values * discount, axis=1))
         grads = actor_tape.gradient(actor_loss, self._actor.trainable_variables)
         self._actor_optimizer.apply_gradients(zip(grads, self._actor.trainable_variables))
         return actor_loss, tf.linalg.global_norm(grads)
 
-    def _critic_grad_step(self, lambda_values, observations, terminals, critic_tape):
-        critic_loss = 0.0
-        for t in tf.range(self._config.horizon):
-            critic_loss -= tf.reduce_mean(self.critic(observations[:, t, ...])
-                                          .log_prob(tf.stop_gradient(lambda_values[:, t, ...])) *
-                                          tf.stop_gradient(1.0 - terminals[:, t, ...]))
+    def _critic_grad_step(self, lambda_values, observations, discount, critic_tape):
+        critic_loss = -tf.reduce_mean(tf.reduce_sum(self.critic(observations).log_prob(
+            tf.stop_gradient(lambda_values * discount)), axis=1))
         grads = critic_tape.gradient(critic_loss, self.critic.trainable_variables)
         self._critic_optimizer.apply_gradients(zip(grads, self.critic.trainable_variables))
         return critic_loss, tf.linalg.global_norm(grads)
@@ -195,8 +200,9 @@ class MBPO(tf.Module):
     def __call__(self, observation, training=True):
         if training:
             if self.warm:
-                action = self._actor(
-                    np.expand_dims(observation, axis=0).astype(np.float32)).sample().numpy()
+                # action = self._actor(
+                #     np.expand_dims(observation, axis=0).astype(np.float32)).sample().numpy()
+                action = self._dbug_actor(tf.constant(observation, dtype=tf.float32)).numpy()
             else:
                 action = self._warmup_policy()
             if self.time_to_update and self.warm:
@@ -212,8 +218,9 @@ class MBPO(tf.Module):
                 if self.time_to_clone_critic:
                     utils.clone_model(self.critic, self._delayed_critic)
         else:
-            action = self._actor(
-                np.expand_dims(observation, axis=0).astype(np.float32)).mode().numpy()
+            # action = self._actor(
+            #     np.expand_dims(observation, axis=0).astype(np.float32)).mode().numpy()
+            action = self._dbug_actor(tf.constant(observation, dtype=tf.float32)).numpy()
         if self.time_to_log and training and self.warm:
             self._logger.log_metrics(self._training_step)
         return np.clip(action, -1.0, 1.0)

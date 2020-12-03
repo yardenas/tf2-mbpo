@@ -10,9 +10,9 @@ class ReplayBuffer(object):
             'next_observation': np.empty((buffer_capacity, observation_dim),
                                          dtype=np.float32),
             'action': np.empty((buffer_capacity, action_dim), dtype=np.float32),
-            'reward': np.empty((buffer_capacity, 1), dtype=np.float32),
-            'terminal': np.empty((buffer_capacity, 1), dtype=np.bool),
-            'info': np.empty((buffer_capacity, 1), dtype=dict)
+            'reward': np.empty(buffer_capacity, dtype=np.float32),
+            'terminal': np.empty(buffer_capacity, dtype=np.bool),
+            'info': np.empty(buffer_capacity, dtype=dict)
         }
         self._size = 0
         self._ptr = 0

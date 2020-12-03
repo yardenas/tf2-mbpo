@@ -36,8 +36,9 @@ class WorldModel(tf.Module):
         return dict(next_observation=tfd.MultivariateNormalDiag(
             loc=self._next_observation_residual_mu(x) + tf.stop_gradient(observation),
             scale_diag=self._next_observation_stddev(x)),
-            reward=tfd.Normal(loc=self._reward_mu(x), scale=1.0),
-            terminal=tfd.Bernoulli(logits=self._terminal_logit(x), dtype=tf.float32))
+            reward=tfd.Normal(loc=tf.squeeze(self._reward_mu(x), axis=1), scale=1.0),
+            terminal=tfd.Bernoulli(logits=tf.squeeze(self._terminal_logit(x), axis=1),
+                                   dtype=tf.float32))
 
 
 # class WorldModelEnsemble(tf.Module):
@@ -91,5 +92,5 @@ class Critic(tf.Module):
         )
 
     def __call__(self, observation):
-        mu = self._action_value(observation)
-        return tfd.Normal(loc=mu, scale=1.0)
+        mu = tf.squeeze(self._action_value(observation), axis=2)
+        return tfd.Independent(tfd.Normal(loc=mu, scale=1.0), 0)

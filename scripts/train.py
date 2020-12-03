@@ -51,6 +51,7 @@ def define_config():
 
 
 def train(config):
+    tf.get_logger().setLevel('ERROR')
     logger = utils.TrainingLogger(config)
     random.seed(config.seed)
     tf.random.set_seed(config.seed)

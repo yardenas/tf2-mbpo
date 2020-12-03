@@ -100,9 +100,9 @@ def do_episode(agent, training, environment, config, pbar, render, reset_functio
             agent.observe(dict(observation=observation.astype(np.float32),
                                next_observation=next_observation.astype(np.float32),
                                action=action.astype(np.float32),
-                               reward=np.array([reward], dtype=np.float32),
-                               terminal=np.array([terminal], dtype=np.bool),
-                               info=np.array([info], dtype=dict),
+                               reward=np.array(reward, dtype=np.float32),
+                               terminal=np.array(terminal, dtype=np.bool),
+                               info=np.array(info, dtype=dict),
                                steps=info.get('steps', config.action_repeat)))
         observation = next_observation
         if render:
@@ -166,9 +166,7 @@ def evaluate_model(episodes_summaries, agent):
         predicted_rollouts = agent.imagine_rollouts(observations, random.choice(agent.ensemble),
                                                     actions)
         observations_mse += (np.asarray(
-            predicted_rollouts['next_observation'].numpy() -
-            episodes_summaries[i]['next_observation'][
-            -prediction_horizon:]) ** 2).mean() / n_episodes
+            predicted_rollouts['next_observation'].numpy() - episodes_summaries[i]['next_observation'][-prediction_horizon:]) ** 2).mean() / n_episodes
         rewards_mse += (np.asarray(
             predicted_rollouts['reward'].numpy() -
             episodes_summaries[i]['reward'][-prediction_horizon:]) ** 2).mean() / n_episodes
