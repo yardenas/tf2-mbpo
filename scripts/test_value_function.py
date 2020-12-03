@@ -32,8 +32,8 @@ def values_monte_carlo_estimate(agent, test_env, config, thetas, dthetas):
     pbar = tqdm(total=thetas.shape[0] * dthetas.shape[0])
     return_samples = np.empty([thetas.shape[0] * dthetas.shape[0]])
     state_id = 0
-    for theta in thetas:
-        for dtheta in dthetas:
+    for dtheta in dthetas:
+        for theta in thetas:
             _, episode_summary = utils.do_episode(
                 agent, training=False, environment=test_env,
                 config=config,
@@ -42,6 +42,7 @@ def values_monte_carlo_estimate(agent, test_env, config, thetas, dthetas):
                                                       dtheta))
             return_samples[state_id] = discounted_cum_sum(episode_summary['reward'],
                                                           config.discount)
+            print("Finished episode with discounted return {}.".format(return_samples[state_id]))
         state_id += 1
     pbar.close()
     return return_samples
@@ -76,12 +77,12 @@ def plot_values_density(value_predictions, monte_carlo_estimation):
 def main():
     config = train_utils.make_config()
     config.environment = 'Pendulum-v0'
-    n_theta = 1
-    n_dtheta = 1
+    n_theta = 3
+    n_dtheta = 3
     # https://github.com/openai/gym/blob/master/gym/envs/classic_control/pendulum.py
     max_speed = 8
     thetas = np.linspace(-np.pi, np.pi, n_theta)
-    dthetas = np.linspace(max_speed, max_speed, n_dtheta)
+    dthetas = np.linspace(-max_speed, max_speed, n_dtheta)
     theta_mesh, dtheta_mesh = np.meshgrid(thetas, dthetas)
     theta_mesh = theta_mesh.ravel()
     dtheta_mesh = dtheta_mesh.ravel()
@@ -98,11 +99,13 @@ def main():
             .mode() \
             .numpy() \
             .squeeze()
-        monte_carlo_estimates[i] = values_monte_carlo_estimate(
+        monte_carlo_estimates[i, :] = values_monte_carlo_estimate(
             trained_agent, test_env, config, thetas, dthetas)
         plot_values(value_predictions[i, :].reshape([n_theta, n_dtheta]))
-        plot_values(np.linalg.norm(
-            value_predictions[i, :] - monte_carlo_estimates[i, :]).reshape([n_theta, n_dtheta]))
+        plot_values(np.linalg.norm(value_predictions[i, :][:, None] -
+                                   monte_carlo_estimates[i, :][:, None],
+                                   axis=-1).reshape([n_theta, n_dtheta]))
+        plot_values(monte_carlo_estimates[i, :].reshape([n_theta, n_dtheta]))
     if n_experiments > 1:
         plot_values_density(value_predictions, monte_carlo_estimates)
 

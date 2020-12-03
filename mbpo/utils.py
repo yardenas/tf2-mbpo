@@ -130,6 +130,7 @@ def interact(agent, environment, steps, config, training=True):
                        pbar, len(episodes) < config.render_episodes and not training)
         steps_count += episode_steps
         episodes.append(episode_summary)
+        print("\nFinished episode with return: {}".format(sum(episode_summary['reward'])))
     pbar.close()
     return steps, episodes
 
@@ -166,7 +167,10 @@ def evaluate_model(episodes_summaries, agent):
         predicted_rollouts = agent.imagine_rollouts(observations, random.choice(agent.ensemble),
                                                     actions)
         observations_mse += (np.asarray(
-            predicted_rollouts['next_observation'].numpy() - episodes_summaries[i]['next_observation'][-prediction_horizon:]) ** 2).mean() / n_episodes
+            predicted_rollouts['next_observation'].numpy() - episodes_summaries[i][
+                                                                 'next_observation'][
+                                                             -prediction_horizon:]) ** 2).mean() \
+                            / n_episodes
         rewards_mse += (np.asarray(
             predicted_rollouts['reward'].numpy() -
             episodes_summaries[i]['reward'][-prediction_horizon:]) ** 2).mean() / n_episodes

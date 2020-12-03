@@ -40,4 +40,9 @@ class ReplayBuffer(object):
             # We mask transitions with 'goal_met' since they are non-continuous, what extremely
             # destabilizes the learning of p(s_t_1 | s_t, a_t)
             out = {k: v[~goal_mets, ...] for k, v in out.items()}
+        out['observation'] = np.clip((out['observation'] - self.obs_mean) / self.obs_stddev,
+                                     -10.0, 10.0)
+        out['next_observation'] = np.clip(
+            (out['next_observation'] - self.obs_mean) / self.obs_stddev,
+            -10.0, 10.0)
         return {k: v for k, v in out.items() if k != 'info'}

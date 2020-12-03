@@ -11,8 +11,7 @@ class WorldModel(tf.Module):
         super().__init__()
         self._dynamics = tf.keras.Sequential(
             [tf.keras.layers.Dense(units=units, activation=activation) for _ in
-             range(dynamics_layers)]
-        )
+             range(dynamics_layers)])
         self._next_observation_residual_mu = tf.keras.layers.Dense(dynamics_size)
         self._next_observation_stddev = tf.keras.layers.Dense(
             dynamics_size,
@@ -31,13 +30,14 @@ class WorldModel(tf.Module):
     def __call__(self, observation, action):
         cat = tf.concat([observation, action], axis=1)
         x = self._dynamics(cat)
-        # TODO (yarden): maybe it's better to feed the reward and terminals s, a instead of x.
+        next_observations = self._next_observation_residual_mu(x) + tf.stop_gradient(observation)
         # The world model predicts the difference between next_observation and observation.
         return dict(next_observation=tfd.MultivariateNormalDiag(
-            loc=self._next_observation_residual_mu(x) + tf.stop_gradient(observation),
+            loc=next_observations,
             scale_diag=self._next_observation_stddev(x)),
-            reward=tfd.Normal(loc=tf.squeeze(self._reward_mu(x), axis=1), scale=1.0),
-            terminal=tfd.Bernoulli(logits=tf.squeeze(self._terminal_logit(x), axis=1),
+            reward=tfd.Normal(loc=tf.squeeze(self._reward_mu(
+                tf.concat([cat, next_observations], axis=1)), axis=1), scale=1.0),
+            terminal=tfd.Bernoulli(logits=tf.squeeze(self._terminal_logit(cat), axis=1),
                                    dtype=tf.float32))
 
 
@@ -75,7 +75,7 @@ class Actor(tf.Module):
     def __call__(self, observation):
         x = self._policy(observation)
         multivariate_normal_diag = tfd.MultivariateNormalDiag(
-            loc=self._mu(x),
+            loc=5.0 * tf.tanh(self._mu(x) / 5.0),
             scale_diag=self._stddev(x))
         # Squash actions to [-1, 1]
         squashed = tfd.TransformedDistribution(multivariate_normal_diag, utils.StableTanhBijector())
@@ -88,8 +88,7 @@ class Critic(tf.Module):
         self._action_value = tf.keras.Sequential(
             [tf.keras.layers.Dense(units=units, activation=activation) for _ in range(layers)] +
             [tf.keras.layers.Dense(units=1, activity_regularizer=tf.keras.regularizers.l2(
-                output_regularization))]
-        )
+                output_regularization))])
 
     def __call__(self, observation):
         mu = tf.squeeze(self._action_value(observation), axis=2)

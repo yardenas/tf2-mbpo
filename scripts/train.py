@@ -30,7 +30,7 @@ def define_config():
         'model_learning_rate': 2.5e-4,
         'actor_learning_rate': 3e-5,
         'critic_learning_rate': 3e-5,
-        'grad_clip_norm': 5.0,
+        'grad_clip_norm': 100.0,
         'weight_decay': 1e-5,
         'critic_regularization': 1e-3,
         # TRAINING

@@ -24,7 +24,7 @@ class MBPO(tf.Module):
         self.ensemble = [models.WorldModel(
             observation_space.shape[0],
             self._config.dynamics_layers,
-            self._config.units, reward_layers=2, terminal_layers=2, min_stddev=0.0001)
+            self._config.units, reward_layers=3, terminal_layers=3, min_stddev=1e-4)
             for _ in range(self._config.ensemble_size)]
         self._model_optimizer = tf.keras.optimizers.Adam(
             learning_rate=self._config.model_learning_rate, clipnorm=self._config.grad_clip_norm,
@@ -148,15 +148,27 @@ class MBPO(tf.Module):
                 imagined_rollouts['next_observation'],
                 imagined_rollouts['reward'],
                 imagined_rollouts['terminal'])
-            actor_loss, actor_grads = self._actor_grad_step(lambda_values, discount, actor_tape)
+            actor_loss, actor_grads_norm = self._actor_grad_step(lambda_values, discount, actor_tape)
         with tf.GradientTape() as critic_tape:
-            critic_loss, critic_grads = self._critic_grad_step(
+            critic_loss, critic_grads_norm = self._critic_grad_step(
                 lambda_values, imagined_rollouts['observation'], discount, critic_tape)
         self._logger['actor_loss'].update_state(actor_loss)
-        self._logger['actor_grads'].update_state(tf.norm(actor_grads))
+        self._logger['actor_grads'].update_state(actor_grads_norm)
         self._logger['critic_loss'].update_state(critic_loss)
-        self._logger['critic_grads'].update_state(tf.norm(critic_grads))
+        self._logger['critic_grads'].update_state(critic_grads_norm)
         self._logger['pi_entropy'].update_state(self._actor(observation).entropy())
+
+    @tf.function
+    def update_critic(self, observation, reward, next_observation, terminal):
+        with tf.GradientTape() as critic_tape:
+            next_values = self._delayed_critic(next_observation[:, None, :]).mode()
+            td = reward + (1.0 - terminal) * self._config.discount * next_values
+            critic_loss = -tf.reduce_mean(self.critic(observation[:, None, :]).log_prob(
+                tf.stop_gradient(td)))
+            grads = critic_tape.gradient(critic_loss, self.critic.trainable_variables)
+            self._critic_optimizer.apply_gradients(zip(grads, self.critic.trainable_variables))
+        self._logger['critic_loss'].update_state(critic_loss)
+        self._logger['critic_grads'].update_state(tf.linalg.global_norm(grads))
 
     def _actor_grad_step(self, lambda_values, discount, actor_tape):
         actor_loss = -tf.reduce_mean(
@@ -197,11 +209,14 @@ class MBPO(tf.Module):
         self._experience.store(transition)
 
     def __call__(self, observation, training=True):
+        scaled_obs = np.clip(
+            (observation - self._experience.obs_mean) / self._experience.obs_stddev,
+            -10.0, 10.0)
         if training:
             if self.warm:
                 # action = self._actor(
-                #     np.expand_dims(observation, axis=0).astype(np.float32)).sample().numpy()
-                action = self._dbug_actor(tf.constant(observation, dtype=tf.float32)).numpy()
+                # np.expand_dims(scaled_obs, axis=0).astype(np.float32)).sample().numpy()
+                action = self._dbug_actor(tf.constant(scaled_obs, dtype=tf.float32)).numpy()
             else:
                 action = self._warmup_policy()
             if self.time_to_update and self.warm:
@@ -211,15 +226,20 @@ class MBPO(tf.Module):
                     batch = self._experience.sample(self._config.batch_size,
                                                     filter_goal_mets=self._config.filter_goal_mets)
                     self.update_model(batch)
-                    self.update_actor_critic(
+                    # self.update_actor_critic(
+                    #     tf.constant(batch['observation'], dtype=tf.float32),
+                    #     random.choice(self.ensemble))
+                    self.update_critic(
                         tf.constant(batch['observation'], dtype=tf.float32),
-                        random.choice(self.ensemble))
+                        tf.constant(batch['reward'], dtype=tf.float32),
+                        tf.constant(batch['next_observation'], dtype=tf.float32),
+                        tf.constant(batch['terminal'], dtype=tf.float32))
                 if self.time_to_clone_critic:
                     utils.clone_model(self.critic, self._delayed_critic)
         else:
             # action = self._actor(
-            #     np.expand_dims(observation, axis=0).astype(np.float32)).mode().numpy()
-            action = self._dbug_actor(tf.constant(observation, dtype=tf.float32)).numpy()
+            #     np.expand_dims(scaled_obs, axis=0).astype(np.float32)).mode().numpy()
+            action = self._dbug_actor(tf.constant(scaled_obs, dtype=tf.float32)).numpy()
         if self.time_to_log and training and self.warm:
             self._logger.log_metrics(self._training_step)
         return np.clip(action, -1.0, 1.0)
