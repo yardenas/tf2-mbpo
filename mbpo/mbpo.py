@@ -126,9 +126,9 @@ class MBPO(tf.Module):
 
         return {k: standardize_shapes(v) for k, v in rollouts.items()}
 
-    def compute_lambda_values(self, next_observations, action, rewards, terminals):
+    def compute_lambda_values(self, next_observations, rewards, terminals):
         lambda_values = tf.TensorArray(tf.float32, self._config.horizon)
-        next_values = self._delayed_critic(next_observation).mode()
+        next_values = self._delayed_critic(next_observations).mode()
         v_lambda = next_values[:, -1] * (1.0 - terminals[:, -1])
         # reverse traversing over data.
         for t in tf.range(start=self._config.horizon - 1, limit=-1, delta=-1):
@@ -146,7 +146,6 @@ class MBPO(tf.Module):
             imagined_rollouts = self.imagine_rollouts(observation, model_bootstrap)
             lambda_values = self.compute_lambda_values(
                 imagined_rollouts['next_observation'],
-                imagined_rollouts['action'],
                 imagined_rollouts['reward'],
                 imagined_rollouts['terminal'])
             actor_loss, actor_grads = self._actor_grad_step(lambda_values, discount, actor_tape)
