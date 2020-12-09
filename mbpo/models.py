@@ -36,28 +36,9 @@ class WorldModel(tf.Module):
             loc=next_observations,
             scale_diag=self._next_observation_stddev(x)),
             reward=tfd.Normal(loc=tf.squeeze(self._reward_mu(
-                tf.concat([cat, next_observations], axis=1)), axis=1), scale=1.0),
+                tf.concat([cat, tf.stop_gradient(next_observations)], axis=1)), axis=1), scale=1.0),
             terminal=tfd.Bernoulli(logits=tf.squeeze(self._terminal_logit(cat), axis=1),
                                    dtype=tf.float32))
-
-
-# class WorldModelEnsemble(tf.Module):
-#     def __init__(self, ensemble_size, dynamics_size, dynamics_layers, units, reward_layers=1,
-#                  terminal_layers=1,
-#                  min_stddev=1e-4,
-#                  activation=tf.nn.relu):
-#         super().__init__()
-#         self._ensemble = [WorldModel(
-#             dynamics_size,
-#             dynamics_layers,
-#             units, reward_layers, terminal_layers, min_stddev, activation)
-#             for _ in range(ensemble_size)]
-#
-#     def __call__(self, observation, action):
-#         states = []
-#         rewards = []
-#         terminals = []
-#         for model in self._ensemble:
 
 
 class Actor(tf.Module):

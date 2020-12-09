@@ -26,13 +26,13 @@ def define_config():
         # MODELS
         'dynamics_layers': 4,
         'units': 128,
-        'ensemble_size': 5,
+        'posterior_samples': 5,
         'model_learning_rate': 2.5e-4,
         'actor_learning_rate': 3e-5,
         'critic_learning_rate': 3e-5,
         'grad_clip_norm': 100.0,
         'weight_decay': 1e-5,
-        'critic_regularization': 1e-3,
+        'critic_regularization': 1e-9,
         # TRAINING
         'total_training_steps': 100000,
         'action_repeat': 3,

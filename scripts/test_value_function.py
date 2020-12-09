@@ -42,8 +42,8 @@ def values_monte_carlo_estimate(agent, test_env, config, thetas, dthetas):
                                                       dtheta))
             return_samples[state_id] = discounted_cum_sum(episode_summary['reward'],
                                                           config.discount)
-            print("Finished episode with discounted return {}.".format(return_samples[state_id]))
-        state_id += 1
+            print("\nFinished episode with discounted return {}.".format(return_samples[state_id]))
+            state_id += 1
     pbar.close()
     return return_samples
 
