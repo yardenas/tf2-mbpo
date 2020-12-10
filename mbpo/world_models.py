@@ -20,9 +20,8 @@ class BayesianWorldModel(tf.Module):
             observations,
             actions)
 
-    @tf.function
     def _imagine_rollouts(self, observations, actions=None):
-        horizon = self._config.horizon if actions is None else tf.shape(actions)[0]
+        horizon = self._config.horizon if actions is None else tf.shape(actions)[1]
         rollouts = {'observation': tf.TensorArray(tf.float32, size=horizon),
                     'next_observation': tf.TensorArray(tf.float32, size=horizon),
                     'action': tf.TensorArray(tf.float32, size=horizon),
@@ -31,11 +30,11 @@ class BayesianWorldModel(tf.Module):
         done_rollout = tf.zeros((tf.shape(observations)[0]), dtype=tf.bool)
         observation = observations
         seeds = tf.cast(self._rng.make_seeds(horizon), tf.int32)
-        for k in tf.range(horizon if actions is None else tf.shape(actions)[0]):
+        for k in tf.range(horizon):
             action_seeds, obs_seeds = tfp.random.split_seed(seeds[:, k], 2, "imagine_rollouts")
             rollouts['observation'] = rollouts['observation'].write(k, observation)
             action = self._actor(tf.stop_gradient(observation)).sample(
-                seed=action_seeds) if actions is None else actions[k, ...]
+                seed=action_seeds) if actions is None else actions[:, k, ...]
             rollouts['action'] = rollouts['action'].write(k, action)
             predictions = self._predict_next_step(observation, action)
             # If the rollout is done, we stay at the terminal state, not overriding with a new,
@@ -111,7 +110,6 @@ class EnsembleWorldModel(BayesianWorldModel):
             config.units, reward_layers, terminal_layers, min_stddev, activation)
             for _ in range(config.posterior_samples)]
 
-    @tf.function
     def _posterior_sample(self, observation, action, seed=None):
         next_observation, reward, terminal = [], [], []
         bootstrap_seed, obs_seeds = tfp.random.split_seed(seed, 2, "ensemble_seed")
@@ -159,7 +157,6 @@ class EnsembleWorldModel(BayesianWorldModel):
         self._logger['world_model_grads'].update_state(tf.linalg.global_norm(grads))
 
     def _split_batch(self, batch):
-        return tf.split(batch,
-                        [tf.shape(batch)[0] // self._config.posterior_samples] *
-                        self._config.posterior_samples +
-                        [tf.shape(batch)[0] % self._config.posterior_samples])
+        div = tf.shape(batch)[0] // self._config.posterior_samples
+        return tf.split(batch, [div] * (self._config.posterior_samples - 1) +
+                        [div + tf.shape(batch)[0] % self._config.posterior_samples])

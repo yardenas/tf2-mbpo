@@ -22,7 +22,7 @@ class CemActor(object):
             predicted_trajectories = self._world_model(
                 tf.broadcast_to(observation,
                                 (action_sequences_batch.shape[0], observation.shape[0])),
-                tf.transpose(action_sequences_batch, [1, 0, 2]))
+                action_sequences_batch)
             scores = tf.reduce_sum(predicted_trajectories['reward'], 1)
             elite_scores, elite = tf.nn.top_k(scores, 10, sorted=False)
             best_of_elite = tf.argmax(elite_scores)

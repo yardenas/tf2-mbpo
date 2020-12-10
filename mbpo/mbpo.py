@@ -22,10 +22,10 @@ class MBPO(tf.Module):
         self._warmup_policy = lambda: np.random.uniform(action_space.low, action_space.high)
         self._actor = models.Actor(action_space.shape[0], 3, self._config.units,
                                    seed=self._config.seed)
-        self._model = world_models.EnsembleWorldModel(
+        self.model = world_models.EnsembleWorldModel(
             self._config, self._logger, self._actor, observation_space.shape[0],
             reward_layers=3, terminal_layers=3, min_stddev=1e-4)
-        self._dbug_actor = CemActor(self._model)
+        self._dbug_actor = CemActor(self.model)
         self._actor_optimizer = tf.keras.optimizers.Adam(
             learning_rate=self._config.actor_learning_rate, clipnorm=self._config.grad_clip_norm,
             epsilon=1e-5
@@ -41,7 +41,7 @@ class MBPO(tf.Module):
         )
 
     def update_model(self, batch):
-        self._model.gradient_step(batch)
+        self.model.gradient_step(batch)
 
     def compute_lambda_values(self, next_observations, rewards, terminals):
         lambda_values = tf.TensorArray(tf.float32, self._config.horizon)
@@ -60,7 +60,7 @@ class MBPO(tf.Module):
         discount = tf.math.cumprod(
             self._config.discount * tf.ones([self._config.horizon]), exclusive=True)
         with tf.GradientTape() as actor_tape:
-            imagined_rollouts = self._model(observation, model_bootstrap)
+            imagined_rollouts = self.model(observation, model_bootstrap)
             lambda_values = self.compute_lambda_values(
                 imagined_rollouts['next_observation'],
                 imagined_rollouts['reward'],
