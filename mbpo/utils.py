@@ -101,7 +101,7 @@ def do_episode(agent, training, environment, config, pbar, render, reset_functio
                                action=action.astype(np.float32),
                                reward=np.array(reward, dtype=np.float32),
                                terminal=np.array(terminal, dtype=np.bool),
-                               info=np.array(info, dtype=dict),
+                               info=info,
                                steps=info.get('steps', config.action_repeat)))
         observation = next_observation
         if render:
@@ -200,3 +200,9 @@ def dump_string(string, filename):
 def clone_model(a, b):
     for var_a, var_b in zip(a.variables, b.variables):
         var_b.assign(var_a)
+
+
+def split_batch(batch, split_size):
+    div = tf.shape(batch)[0] // split_size
+    return tf.split(batch, [div] * (split_size - 1) +
+                    [div + tf.shape(batch)[0] % split_size])

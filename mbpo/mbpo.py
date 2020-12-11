@@ -9,22 +9,20 @@ from mbpo.cem_actor import CemActor
 from mbpo.replay_buffer import ReplayBuffer
 
 
-# TODO (yarden): observe gradients of actor - if small maybe vanishing??? - if so, return to
-# DDPG/SAC style algorithms (with q-function) or use gru/lstm in dynamics
-
 class MBPO(tf.Module):
     def __init__(self, config, logger, observation_space, action_space):
         super(MBPO, self).__init__()
         self._config = config
         self._logger = logger
         self._training_step = 0
-        self._experience = ReplayBuffer(observation_space.shape[0], action_space.shape[0])
+        self._experience = ReplayBuffer(observation_space.shape[0],
+                                        action_space.shape[0], config.sequence_length)
         self._warmup_policy = lambda: np.random.uniform(action_space.low, action_space.high)
         self._actor = models.Actor(action_space.shape[0], 3, self._config.units,
                                    seed=self._config.seed)
         self.model = world_models.EnsembleWorldModel(
             self._config, self._logger, self._actor, observation_space.shape[0],
-            reward_layers=3, terminal_layers=3, min_stddev=1e-4)
+            reward_layers=2, terminal_layers=2, min_stddev=1e-4)
         self._dbug_actor = CemActor(self.model)
         self._actor_optimizer = tf.keras.optimizers.Adam(
             learning_rate=self._config.actor_learning_rate, clipnorm=self._config.grad_clip_norm,
@@ -41,7 +39,7 @@ class MBPO(tf.Module):
         )
 
     def update_model(self, batch):
-        self.model.gradient_step(batch)
+        self.model.gradient_step({k: tf.constant(v) for k, v in batch.items()})
 
     def compute_lambda_values(self, next_observations, rewards, terminals):
         lambda_values = tf.TensorArray(tf.float32, self._config.horizon)
@@ -57,6 +55,7 @@ class MBPO(tf.Module):
 
     @tf.function
     def update_actor_critic(self, observation, model_bootstrap):
+        # TODO (yarden): shuffle when raveling the imagined trajectorieiesiseiesiseiesi
         discount = tf.math.cumprod(
             self._config.discount * tf.ones([self._config.horizon]), exclusive=True)
         with tf.GradientTape() as actor_tape:
@@ -141,17 +140,16 @@ class MBPO(tf.Module):
                 print("Updating world model, actor and critic.")
                 self._experience.update_statistics()
                 for _ in tqdm(range(self._config.update_steps), position=0, leave=True):
-                    batch = self._experience.sample(self._config.batch_size,
-                                                    filter_goal_mets=self._config.filter_goal_mets)
+                    batch = self._experience.sample(self._config.batch_size)
                     self.update_model(batch)
                     # self.update_actor_critic(
                     #     tf.constant(batch['observation'], dtype=tf.float32),
                     #     random.choice(self.ensemble))
-                    self.update_critic(
-                        tf.constant(batch['observation'], dtype=tf.float32),
-                        tf.constant(batch['reward'], dtype=tf.float32),
-                        tf.constant(batch['next_observation'], dtype=tf.float32),
-                        tf.constant(batch['terminal'], dtype=tf.float32))
+                    # self.update_critic(
+                    #     tf.constant(batch['observation'], dtype=tf.float32),
+                    #     tf.constant(batch['reward'], dtype=tf.float32),
+                    #     tf.constant(batch['next_observation'], dtype=tf.float32),
+                    #     tf.constant(batch['terminal'], dtype=tf.float32))
                 if self.time_to_clone_critic:
                     utils.clone_model(self.critic, self._delayed_critic)
         else:

@@ -13,6 +13,7 @@ def define_config():
     return {
         # MBPO
         'horizon': 5,
+        'sequence_length': 50,
         'update_steps': 100,
         'discount': 0.99,
         'lambda_': 0.95,
@@ -21,10 +22,11 @@ def define_config():
         # This batch size is split evenly among world models in the ensemble but gets as a whole
         # for the actor critic. This *might* reduce the high variance of the actor-critic and
         # still be not too large batch size for the model.
-        'batch_size': 2500,
+        'batch_size': 50,
         'warmup_training_steps': 5000,
         # MODELS
-        'dynamics_layers': 4,
+        'dynamics_layers': 2,
+        'cell_size': 128,
         'units': 128,
         'posterior_samples': 5,
         'model_learning_rate': 2.5e-4,
@@ -36,8 +38,7 @@ def define_config():
         # TRAINING
         'total_training_steps': 100000,
         'action_repeat': 3,
-        'filter_goal_mets': False,
-        'environment': 'InvertedPendulum-v2',
+        'environment': 'Pendulum-v0',
         'seed': 314,
         'steps_per_log': 1000,
         'episode_length': 1000,

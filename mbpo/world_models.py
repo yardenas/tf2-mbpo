@@ -2,6 +2,7 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 
 from mbpo import models
+from mbpo import utils as utils
 
 
 class BayesianWorldModel(tf.Module):
@@ -16,80 +17,36 @@ class BayesianWorldModel(tf.Module):
             epsilon=1e-5)
 
     def __call__(self, observations, actions=None):
-        return self._imagine_rollouts(
-            observations,
-            actions)
-
-    def _imagine_rollouts(self, observations, actions=None):
-        horizon = self._config.horizon if actions is None else tf.shape(actions)[1]
-        rollouts = {'observation': tf.TensorArray(tf.float32, size=horizon),
-                    'next_observation': tf.TensorArray(tf.float32, size=horizon),
-                    'action': tf.TensorArray(tf.float32, size=horizon),
-                    'reward': tf.TensorArray(tf.float32, size=horizon),
-                    'terminal': tf.TensorArray(tf.float32, size=horizon)}
-        done_rollout = tf.zeros((tf.shape(observations)[0]), dtype=tf.bool)
-        observation = observations
-        seeds = tf.cast(self._rng.make_seeds(horizon), tf.int32)
-        for k in tf.range(horizon):
-            action_seeds, obs_seeds = tfp.random.split_seed(seeds[:, k], 2, "imagine_rollouts")
-            rollouts['observation'] = rollouts['observation'].write(k, observation)
-            action = self._actor(tf.stop_gradient(observation)).sample(
-                seed=action_seeds) if actions is None else actions[:, k, ...]
-            rollouts['action'] = rollouts['action'].write(k, action)
-            predictions = self._predict_next_step(observation, action)
-            # If the rollout is done, we stay at the terminal state, not overriding with a new,
-            # possibly valid state.
-            observation = tf.where(done_rollout[:, None],
-                                   observation,
-                                   predictions['next_observation'])
-            rollouts['next_observation'] = rollouts['next_observation'].write(k, observation)
-            terminal = tf.where(done_rollout,
-                                1.0,
-                                predictions['terminal'])
-            rollouts['terminal'] = rollouts['terminal'].write(k, terminal)
-            reward = tf.where(done_rollout,
-                              0.0,
-                              predictions['reward'])
-            rollouts['reward'] = rollouts['reward'].write(k, reward)
-            done_rollout = tf.logical_or(
-                tf.cast(terminal, tf.bool), done_rollout)
-
-        def standardize_shapes(tensor_array):
-            stacked = tensor_array.stack()
-            if len(tf.shape(stacked)) == 2:
-                return tf.transpose(tf.squeeze(stacked))
-            else:
-                return tf.transpose(stacked, [1, 0, 2])
-
-        return {k: standardize_shapes(v) for k, v in rollouts.items()}
-
-    def _predict_next_step(self, current_observation, current_action):
-        all_predictions = {
-            'next_observation': tf.TensorArray(tf.float32,
-                                               self._config.posterior_samples),
-            'reward': tf.TensorArray(tf.float32, self._config.posterior_samples),
-            'terminal': tf.TensorArray(tf.float32, self._config.posterior_samples)}
-        model_seeds = tf.cast(self._rng.make_seeds(self._config.posterior_samples), tf.int32)
-        # TODO (yarden): check with tf.range() (if posterior sample actually happens after
-        #  retracing)
+        posterior_rollouts = {'next_observation': [],
+                              'reward': [],
+                              'terminal': []}
+        posterior_seeds = tf.cast(self._rng.make_seeds(self._config.posterior_samples), tf.int32)
         for i in range(self._config.posterior_samples):
-            next_observation, reward, terminal = self._posterior_sample(
-                current_observation, current_action, model_seeds[:, i])
-            all_predictions['next_observation'] = all_predictions[
-                'next_observation'].write(i, next_observation)
-            all_predictions['terminal'] = all_predictions['terminal'].write(i, terminal)
-            all_predictions['reward'] = all_predictions['reward'].write(i, reward)
+            for k, v in self._posterior_sample(
+                    observations, actions, posterior_seeds[:, i]).items():
+                posterior_rollouts[k].append(v)
 
-        def marginalize_models(key, value):
-            stacked = value.stack()
-            if key == 'terminal':
-                return tfp.stats.percentile(stacked, 50.0, 0)
-            else:
-                return tf.reduce_mean(stacked, 0)
+        # def marginalize_models(key, value):
+        #     stacked = tf.stack(value, 0)
+        #     if key == 'terminal':
+        #         return tfp.stats.percentile(stacked, 50.0, 0)
+        #     else:
+        #         return tf.reduce_mean(stacked, 0)
 
-        return {k: marginalize_models(k, v) for k, v in all_predictions.items()}
+        # marginalized_trajectory = {k: tf.reduce_mean(
+        #         #     tf.stack(v, 0), 0) for k, v in posterior_rollouts.items()}
+        # Everything beyond the first terminal state is also terminal
+        # TODO (yarden): this might really destroy backpropagation stuff? if it doesn't work,
+        #  predict the probability of continue and use that as discount
+        # not_terminals = tf.math.cumprod(1.0 - marginalized_trajectory['terminal'], 1)
+        # terminals_idxs = tf.reduce_sum(not_terminals, 1)
+        # return {k: tf.where(not_terminals,
+        #                     v,
+        #                     v[:, terminals_idxs]) for k, v in marginalized_trajectory}
+        return {k: tf.reduce_mean(
+            tf.stack(v, 0), 0) for k, v in posterior_rollouts.items()}
 
-    def _posterior_sample(self, observation, action, seed=None):
+    def _posterior_sample(self, observation, action, seed):
         raise NotImplementedError
 
     def gradient_step(self, batch):
@@ -106,45 +63,52 @@ class EnsembleWorldModel(BayesianWorldModel):
         super().__init__(config, logger, actor)
         self._ensemble = [models.WorldModel(
             dynamics_size,
+            config.cell_size,
             config.dynamics_layers,
-            config.units, reward_layers, terminal_layers, min_stddev, activation)
+            config.units,
+            config.seed,
+            reward_layers, terminal_layers, min_stddev, activation)
             for _ in range(config.posterior_samples)]
 
-    def _posterior_sample(self, observation, action, seed=None):
-        next_observation, reward, terminal = [], [], []
-        bootstrap_seed, obs_seeds = tfp.random.split_seed(seed, 2, "ensemble_seed")
-        idxs = tf.random.stateless_uniform([tf.shape(observation)[0]], bootstrap_seed, 0,
+    def _posterior_sample(self, observation, action, seed):
+        ensemble_rollouts = {'next_observation': [],
+                             'reward': [],
+                             'terminal': []}
+        obs_seed, shuffle_seed = tfp.random.split_seed(seed, 2, "posterior_sample")
+        idxs = tf.random.stateless_uniform([tf.shape(observation)[0]], shuffle_seed, 0,
                                            tf.shape(observation)[0], tf.int32)
-        bootstraped_obs = self._split_batch(tf.gather(observation, idxs))
-        bootstraped_acs = self._split_batch(tf.gather(action, idxs))
+        bootstraped_obs = utils.split_batch(tf.gather(observation, idxs),
+                                            self._config.posterior_samples)
+        bootstraped_acs = utils.split_batch(
+            tf.gather(action, idxs),
+            self._config.posterior_samples) if action is not None else [None] * len(bootstraped_obs)
         for obs, acs, model in zip(bootstraped_obs, bootstraped_acs, self._ensemble):
-            preds = model(obs, acs)
-            next_observation.append(preds['next_observation'].sample(seed=seed))
-            reward.append(preds['reward'].mode())
-            terminal.append(preds['terminal'].mode())
-        cat_obs = tf.concat(next_observation, 0)
-        cat_rews = tf.concat(reward, 0)
-        cat_terms = tf.concat(terminal, 0)
-        # This implements TS-1 from PETS.
-        return cat_obs, cat_rews, cat_terms
+            predictions = model(obs, self._config.horizon, actor=self._actor, actions=acs)
+            ensemble_rollouts['next_observation'].append(predictions['next_observation'].sample(
+                seed=obs_seed))
+            ensemble_rollouts['reward'].append(predictions['reward'].mode())
+            ensemble_rollouts['terminal'].append(predictions['terminal'].mean())
+        return {k: tf.concat(v, 0) for k, v in ensemble_rollouts.items()}
 
     @tf.function
     def gradient_step(self, batch):
-        bootstraped_batches = {k: self._split_batch(v)
+        bootstraped_batches = {k: utils.split_batch(v, self._config.posterior_samples)
                                for k, v in batch.items()}
         parameters = []
         loss = 0.0
         with tf.GradientTape() as model_tape:
             for i, world_model in enumerate(self._ensemble):
                 observations = bootstraped_batches['observation'][i]
-                target_next_observations = bootstraped_batches['next_observation'][i]
                 actions = bootstraped_batches['action'][i]
-                target_rewards = bootstraped_batches['reward'][i]
-                target_terminals = bootstraped_batches['terminal'][i]
-                predictions = world_model(observations, actions)
+                target_next_observations = bootstraped_batches['next_observation'][i]
+                predictions = world_model(
+                    observations, tf.shape(actions)[1], actions,
+                    next_observations=target_next_observations)
                 log_p_dynamics = tf.reduce_mean(
                     predictions['next_observation'].log_prob(target_next_observations))
+                target_rewards = bootstraped_batches['reward'][i]
                 log_p_reward = tf.reduce_mean(predictions['reward'].log_prob(target_rewards))
+                target_terminals = bootstraped_batches['terminal'][i]
                 log_p_terminals = tf.reduce_mean(predictions['terminal'].log_prob(target_terminals))
                 loss -= (log_p_dynamics + log_p_reward + log_p_terminals)
                 parameters += world_model.trainable_variables
@@ -155,8 +119,3 @@ class EnsembleWorldModel(BayesianWorldModel):
             self._optimizer.apply_gradients(zip(grads, parameters))
         self._logger['world_model_total_loss'].update_state(loss)
         self._logger['world_model_grads'].update_state(tf.linalg.global_norm(grads))
-
-    def _split_batch(self, batch):
-        div = tf.shape(batch)[0] // self._config.posterior_samples
-        return tf.split(batch, [div] * (self._config.posterior_samples - 1) +
-                        [div + tf.shape(batch)[0] % self._config.posterior_samples])
