@@ -42,20 +42,21 @@ class MBPO(tf.Module):
         self.model.gradient_step({k: tf.constant(v) for k, v in batch.items()})
 
     def compute_lambda_values(self, next_observations, rewards, terminals):
-        lambda_values = tf.TensorArray(tf.float32, self._config.horizon)
+        lambda_values = []
         next_values = self._delayed_critic(next_observations).mode()
         v_lambda = next_values[:, -1] * (1.0 - terminals[:, -1])
         # reverse traversing over data.
-        for t in tf.range(start=self._config.horizon - 1, limit=-1, delta=-1):
+        for t in reversed(range(self._config.horizon)):
             td = rewards[:, t] + (1.0 - terminals[:, t]) * (
                     1.0 - self._config.lambda_) * self._config.discount * next_values[:, t]
             v_lambda = td + v_lambda * self._config.lambda_ * self._config.discount
-            lambda_values = lambda_values.write(t, v_lambda)
-        return tf.transpose(lambda_values.stack())
+            lambda_values.append(v_lambda)
+        return tf.transpose(tf.stack(lambda_values, 1))
 
     @tf.function
     def update_actor_critic(self, observation, model_bootstrap):
-        # TODO (yarden): shuffle when raveling the imagined trajectorieiesiseiesiseiesi
+        # TODO (yarden): shuffle when raveling the imagined trajectorieiesiseiesiseiesi (not sure
+        #  if actually important)
         discount = tf.math.cumprod(
             self._config.discount * tf.ones([self._config.horizon]), exclusive=True)
         with tf.GradientTape() as actor_tape:

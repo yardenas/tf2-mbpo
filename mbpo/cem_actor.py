@@ -6,7 +6,7 @@ class CemActor(object):
     def __init__(self, world_model):
         self._world_model = world_model
 
-    @tf.function
+    # @tf.function
     def __call__(self, observation):
         action_dim = 1
         mu = tf.zeros((8, action_dim))

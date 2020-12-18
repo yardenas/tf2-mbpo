@@ -90,7 +90,7 @@ class EnsembleWorldModel(BayesianWorldModel):
             ensemble_rollouts['terminal'].append(predictions['terminal'].mean())
         return {k: tf.concat(v, 0) for k, v in ensemble_rollouts.items()}
 
-    @tf.function
+    # @tf.function
     def gradient_step(self, batch):
         bootstraped_batches = {k: utils.split_batch(v, self._config.posterior_samples)
                                for k, v in batch.items()}
