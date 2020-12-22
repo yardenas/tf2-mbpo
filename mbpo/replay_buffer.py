@@ -1,6 +1,8 @@
 import numpy as np
 
-
+# TODO (yarden): !!! This is not necessarily good because we only use the fixed sequences and not
+# possible sequences that can be created with the middles of two sequences:
+# look here: https://github.com/danijar/dreamer/blob/02f0210f5991c7710826ca7881f19c64a012290c/tools.py#L157
 class SequenceBuffer(object):
     def __init__(self, sequence_length, observation_dim, action_dim):
         self._buffer = {

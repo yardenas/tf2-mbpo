@@ -197,6 +197,10 @@ def dump_string(string, filename):
         file.write(string)
 
 
+def preprocess(image):
+    return tf.cast(image, tf.float32) / 255.0 - 0.5
+
+
 def clone_model(a, b):
     for var_a, var_b in zip(a.variables, b.variables):
         var_b.assign(var_a)
