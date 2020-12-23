@@ -80,9 +80,9 @@ class TrainingLogger(object):
             v.reset_states()
         self._writer.flush()
 
-    def log_video(self, images, step):
-        video = np.expand_dims(np.transpose(images, [0, 3, 1, 2]), axis=0)
-        self._writer.add_video('Evaluation policy', video, step, fps=15)
+    # (N, T, C, H, W)
+    def log_video(self, images, step, name='Evaluation policy', fps=15):
+        self._writer.add_video(name, images, step, fps=fps)
         self._writer.flush()
 
 

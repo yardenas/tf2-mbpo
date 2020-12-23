@@ -145,6 +145,10 @@ def main():
             show_sequence(batch[:3, ::5, ...], 'results/test_image_' + str(i) + '.png')
             show_sequence(reconstructed_sequence[:3, ::5, ...],
                           'results/reconstructed_image_' + str(i) + '.png')
+            logger.log_video(tf.transpose(reconstructed_sequence[:5], [0, 1, 4, 2, 3]).numpy(), i,
+                             "reconstructed_sequence", 5)
+            logger.log_video(tf.transpose(batch[:5], [0, 1, 4, 2, 3]).numpy(), i,
+                             "true_sequence", 5)
 
 
 if __name__ == '__main__':
