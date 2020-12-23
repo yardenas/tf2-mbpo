@@ -65,8 +65,8 @@ def grad(model, batch):
     with tf.GradientTape() as tape:
         features, prior, posterior = observe_sequence(model, batch)
         kl = tf.reduce_mean(tf.reduce_sum(tfd.kl_divergence(posterior, prior), 1))
-        log_p_observations = tf.reduce_mean(
-            model._observation_decoder(features).log_prob(batch))
+        log_p_observations = tf.reduce_mean(tf.reduce_sum(
+            model._observation_decoder(features).log_prob(batch), 1))
         loss = -log_p_observations + model._kl_scale * tf.maximum(model._free_nats, kl)
     return tape.gradient(loss, model.trainable_variables), loss, log_p_observations, kl
 
@@ -75,8 +75,8 @@ def grad(model, batch):
 def reconstruct(model, batch):
     features, prior, posterior = observe_sequence(model, batch)
     kl = tf.reduce_mean(tf.reduce_sum(tfd.kl_divergence(posterior, prior), 1))
-    log_p_observations = tf.reduce_mean(
-        model._observation_decoder(features).log_prob(batch))
+    log_p_observations = tf.reduce_mean(tf.reduce_sum(
+        model._observation_decoder(features).log_prob(batch), 1))
     loss = -log_p_observations + model._kl_scale * tf.maximum(model._free_nats, kl)
     return model._observation_decoder(features).mode(), loss
 
@@ -94,7 +94,7 @@ def observe_sequence(model, samples):
                         'posterior_mus': tf.TensorArray(tf.float32, horizon),
                         'posterior_stddevs': tf.TensorArray(tf.float32, horizon)}
     seeds = tf.cast(rng.make_seeds(horizon), tf.int32)
-    for t in range(horizon):
+    for t in tf.range(horizon):
         predict_seeds, correct_seeds = tfp.random.split_seed(seeds[:, t], 2, "observe_sequence")
         prior, belief_prediction = model.predict(actions[:, t], belief, seed=predict_seeds)
         posterior, belief = model._correct(embeddings[:, t], belief, belief_prediction, prior,
@@ -121,9 +121,9 @@ def main():
     os.environ['CUDA_VISIBLE_DEVICES'] = '0'
     tf.random.set_seed(0)
     np.random.seed(0)
-    model = models.WorldModel('binary_image', (64, 64, 1), 30, 300, 256, 0)
+    model = models.WorldModel('binary_image', (64, 64, 1), 30, 200, 400, 0)
     optimizer = tf.keras.optimizers.Adam(
-        learning_rate=5e-4, clipnorm=100, epsilon=1e-5)
+        learning_rate=5e-4, clipnorm=100)
     train_dataset = make_dataset('train_dataset', repeat=1, shuffle=0)
     config = collections.namedtuple('Config', ['log_dir'])('results')
     logger = utils.TrainingLogger(config)
@@ -134,8 +134,6 @@ def main():
         logger['kl'].update_state(total_kl)
         optimizer.apply_gradients(zip(grads, model.trainable_variables))
         if (i % 50) == 0:
-            print("Loss: {}\nObs log probs: {}\nKL: {}".format(
-                logger['loss'].result(), logger['log_probs'].result(), logger['kl'].result()))
             logger.log_metrics(i)
 
     test_dataset = make_dataset('test_dataset', 'test')

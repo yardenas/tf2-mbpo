@@ -37,7 +37,7 @@ class ConvDecoder(tf.Module):
         x = self._layers(x)
         x = tf.reshape(x, tf.concat([tf.shape(inputs)[:-1], self._shape], 0))
         if self._dist == 'normal':
-            return tfd.Independent(tfd.MultivariateNormalDiag(x, 1.0), len(self._shape))
+            return tfd.Independent(tfd.Normal(x, 1.0), len(self._shape))
         elif self._dist == 'bernoulli':
             return tfd.Independent(tfd.Bernoulli(x, dtype=tf.float32), len(self._shape))
 

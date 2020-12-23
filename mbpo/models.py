@@ -10,12 +10,11 @@ class WorldModel(tf.Module):
     # Following formulation of https://arxiv.org/pdf/1605.07571.pdf
     def __init__(self, observation_type, observation_shape, stochastic_size, deterministic_size,
                  units, seed, free_nats=3, kl_scale=1.0, observation_layers=3, reward_layers=1,
-                 terminal_layers=1, min_stddev=1e-4, activation=tf.nn.relu):
+                 terminal_layers=1, activation=tf.nn.relu):
         super().__init__()
-        self._min_stddev = min_stddev
         self._cell = tf.keras.layers.GRUCell(deterministic_size)
         self._g = tf.keras.Sequential(
-            [tf.keras.layers.Dense(units, activation) for _ in range(2)])
+            [tf.keras.layers.Dense(units, activation) for _ in range(1)])
         self._observation_encoder = blocks.encoder(observation_type, observation_shape,
                                                    observation_layers, units)
         self._observation_decoder = blocks.decoder(observation_type, observation_shape, 3, units)
@@ -23,10 +22,10 @@ class WorldModel(tf.Module):
         self._terminal_decoder = blocks.DenseDecoder(
             (), terminal_layers, units, activation, 'bernoulli')
         self._posterior_decoder = tf.keras.Sequential(
-            [tf.keras.layers.Dense(units, activation) for _ in range(2)] +
+            [tf.keras.layers.Dense(units, activation) for _ in range(1)] +
             [tf.keras.layers.Dense(2 * stochastic_size)])
         self._prior_decoder = tf.keras.Sequential(
-            [tf.keras.layers.Dense(units, activation) for _ in range(2)] +
+            [tf.keras.layers.Dense(units, activation) for _ in range(1)] +
             [tf.keras.layers.Dense(2 * stochastic_size)])
         self._current_belief = None
         self._rng = tf.random.Generator.from_seed(seed)
