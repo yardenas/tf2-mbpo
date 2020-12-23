@@ -10,6 +10,8 @@ from tensorflow_probability import distributions as tfd
 import mbpo.models as models
 import mbpo.utils as utils
 
+rng = tf.random.Generator.from_seed(0)
+
 
 # https://github.com/davidsandberg/rl_ssms/blob/master/bouncing_ball_prediction.ipynb
 def load_sequence(filename):
@@ -88,7 +90,6 @@ def observe_sequence(model, samples):
                         'prior_stddevs': tf.TensorArray(tf.float32, horizon),
                         'posterior_mus': tf.TensorArray(tf.float32, horizon),
                         'posterior_stddevs': tf.TensorArray(tf.float32, horizon)}
-    rng = tf.random.Generator.from_seed(0)
     seeds = tf.cast(rng.make_seeds(horizon), tf.int32)
     for t in range(horizon):
         predict_seeds, correct_seeds = tfp.random.split_seed(seeds[:, t], 2, "observe_sequence")
