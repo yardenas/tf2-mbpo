@@ -135,6 +135,12 @@ def main():
         optimizer.apply_gradients(zip(grads, model.trainable_variables))
         if (i % 50) == 0:
             logger.log_metrics(i)
+        if (i % 100) == 0:
+            reconstructed_sequence, elbo = reconstruct(model, batch)
+            logger.log_video(tf.transpose(reconstructed_sequence[:5], [0, 1, 4, 2, 3]).numpy(), i,
+                             "reconstructed_sequence", 5)
+            logger.log_video(tf.transpose(batch[:5], [0, 1, 4, 2, 3]).numpy(), i,
+                             "true_sequence", 5)
 
     test_dataset = make_dataset('test_dataset', 'test')
     for i, batch in enumerate(test_dataset):
@@ -142,9 +148,6 @@ def main():
         logger['test_elbo'].update_state(elbo)
         if (i % 50) == 0:
             print("Test ELBO: {}".format(logger['test_elbo'].result()))
-            show_sequence(batch[:3, ::5, ...], 'results/test_image_' + str(i) + '.png')
-            show_sequence(reconstructed_sequence[:3, ::5, ...],
-                          'results/reconstructed_image_' + str(i) + '.png')
             logger.log_video(tf.transpose(reconstructed_sequence[:5], [0, 1, 4, 2, 3]).numpy(), i,
                              "reconstructed_sequence", 5)
             logger.log_video(tf.transpose(batch[:5], [0, 1, 4, 2, 3]).numpy(), i,
