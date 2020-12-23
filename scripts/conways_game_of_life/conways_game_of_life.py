@@ -30,7 +30,7 @@ def load_data(data_dir, prefix='train'):
         yield np.array(sequence_batch, np.float32)[..., None]
 
 
-def show_sequence(sequence):
+def show_sequence(sequence, figname=None):
     plt.rcParams['figure.figsize'] = [15, 8]
     batch, length, width, height, depth = sequence.shape
     out = np.zeros((batch * height, length * width, depth))
@@ -42,6 +42,8 @@ def show_sequence(sequence):
     out[1::height, :, :] = 0.5
     out[:, 1::width, :] = 0.5
     plt.imshow(out, cmap=matplotlib.cm.Greys_r)
+    if figname is not None:
+      plt.savefig(figname, 'png')
 
 
 def make_dataset(dir, prefix='train', repeat=0, shuffle=0, seed=0):
@@ -115,32 +117,31 @@ def observe_sequence(model, samples):
 
 
 def main():
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
     tf.random.set_seed(0)
     np.random.seed(0)
     model = models.WorldModel('binary_image', (64, 64, 1), 30, 300, 256, 0)
     optimizer = tf.keras.optimizers.Adam(
         learning_rate=5e-4, clipnorm=100, epsilon=1e-5)
-    train_dataset = make_dataset('data', repeat=5, shuffle=3000)
+    train_dataset = make_dataset('train_dataset', repeat=5, shuffle=0)
     train_loss = tf.keras.metrics.Mean()
     for i, batch in enumerate(train_dataset):
-        show_sequence(batch[:3, ::5, ...])
         grads, loss, log_p_obs, total_kl = grad(model, batch)
         train_loss.update_state(loss)
         optimizer.apply_gradients(zip(grads, model.trainable_variables))
         if (i % 50) == 0:
             print("Loss: {}\nObs log probs: {}\nKL: {}".format(
                 train_loss.result(), log_p_obs, total_kl))
-    test_dataset = make_dataset('data', 'test')
+
+    test_dataset = make_dataset('test_dataset', 'test')
     test_elbo = tf.keras.metrics.Mean()
     for i, batch in enumerate(test_dataset):
         reconstructed_sequence, elbo = reconstruct(model, batch)
         test_elbo.update_state(elbo)
         if (i % 50) == 0:
             print("Test ELBO: {}".format(test_elbo.result()))
-            show_sequence(reconstructed_sequence[:3, ::5, ...])
-            plt.show()
-            show_sequence(batch[:3, ::5, ...])
-            plt.show()
+            show_sequence(batch[:3, ::5, ...], 'test_image' + str(i))
+	    show_sequence(reconstructed_sequence[:3, ::5, ...], 'reconstructed_image' + str(i))
 
 
 if __name__ == '__main__':
