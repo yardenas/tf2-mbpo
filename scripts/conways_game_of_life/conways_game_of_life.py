@@ -67,7 +67,8 @@ def grad(model, batch):
         kl = tf.reduce_mean(tf.reduce_sum(tfd.kl_divergence(posterior, prior), 1))
         log_p_observations = tf.reduce_mean(tf.reduce_sum(
             model._observation_decoder(features).log_prob(batch), 1))
-        loss = -log_p_observations + model._kl_scale * tf.maximum(model._free_nats, kl)
+        horizon = tf.shape(batch)[1]
+        loss = -log_p_observations + model._kl_scale * tf.maximum(model._free_nats * horizon, kl)
     return tape.gradient(loss, model.trainable_variables), loss, log_p_observations, kl
 
 
@@ -77,7 +78,8 @@ def reconstruct(model, batch):
     kl = tf.reduce_mean(tf.reduce_sum(tfd.kl_divergence(posterior, prior), 1))
     log_p_observations = tf.reduce_mean(tf.reduce_sum(
         model._observation_decoder(features).log_prob(batch), 1))
-    loss = -log_p_observations + model._kl_scale * tf.maximum(model._free_nats, kl)
+    horizon = tf.shape(batch)[1]
+    loss = -log_p_observations + model._kl_scale * tf.maximum(model._free_nats * horizon, kl)
     return model._observation_decoder(features).mode(), loss
 
 
@@ -137,9 +139,9 @@ def main():
             logger.log_metrics(i)
         if (i % 100) == 0:
             reconstructed_sequence, elbo = reconstruct(model, batch)
-            logger.log_video(tf.transpose(reconstructed_sequence[:5], [0, 1, 4, 2, 3]).numpy(), i,
+            logger.log_video(tf.transpose(reconstructed_sequence[:3], [0, 1, 4, 2, 3]).numpy(), i,
                              "reconstructed_sequence", 5)
-            logger.log_video(tf.transpose(batch[:5], [0, 1, 4, 2, 3]).numpy(), i,
+            logger.log_video(tf.transpose(batch[:3], [0, 1, 4, 2, 3]).numpy(), i,
                              "true_sequence", 5)
 
     test_dataset = make_dataset('test_dataset', 'test')
@@ -148,9 +150,9 @@ def main():
         logger['test_elbo'].update_state(elbo)
         if (i % 50) == 0:
             print("Test ELBO: {}".format(logger['test_elbo'].result()))
-            logger.log_video(tf.transpose(reconstructed_sequence[:5], [0, 1, 4, 2, 3]).numpy(), i,
+            logger.log_video(tf.transpose(reconstructed_sequence[:3], [0, 1, 4, 2, 3]).numpy(), i,
                              "reconstructed_sequence", 5)
-            logger.log_video(tf.transpose(batch[:5], [0, 1, 4, 2, 3]).numpy(), i,
+            logger.log_video(tf.transpose(batch[:3], [0, 1, 4, 2, 3]).numpy(), i,
                              "true_sequence", 5)
 
 
