@@ -68,7 +68,8 @@ def grad(model, batch):
         kl = tf.reduce_mean(tf.reduce_sum(tfd.kl_divergence(posterior, prior), 1))
         log_p_observations = tf.reduce_mean(tf.reduce_sum(
             model._observation_decoder(features).log_prob(batch), 1))
-        loss = -log_p_observations + model._kl_scale * tf.maximum(model._free_nats, kl)
+        horizon = tf.shape(batch)[1]
+        loss = -log_p_observations + model._kl_scale * tf.maximum(model._free_nats * horizon, kl)
     return tape.gradient(loss, model.trainable_variables), loss, log_p_observations, kl
 
 
@@ -78,7 +79,8 @@ def reconstruct(model, batch):
     kl = tf.reduce_mean(tf.reduce_sum(tfd.kl_divergence(posterior, prior), 1))
     log_p_observations = tf.reduce_mean(tf.reduce_sum(
         model._observation_decoder(features).log_prob(batch), 1))
-    loss = -log_p_observations + model._kl_scale * tf.maximum(model._free_nats, kl)
+    horizon = tf.shape(batch)[1]
+    loss = -log_p_observations + model._kl_scale * tf.maximum(model._free_nats * horizon, kl)
     return model._observation_decoder(features).mode(), loss
 
 
