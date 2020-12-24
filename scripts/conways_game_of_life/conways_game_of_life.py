@@ -1,5 +1,6 @@
 import collections
 import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -120,14 +121,13 @@ def observe_sequence(model, samples):
 
 
 def main():
-    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
     tf.random.set_seed(0)
     np.random.seed(0)
     model = models.WorldModel('binary_image', (64, 64, 1), 30, 200, 400, 0)
     optimizer = tf.keras.optimizers.Adam(
-        learning_rate=5e-4, clipnorm=100)
-    train_dataset = make_dataset('train_dataset', repeat=1, shuffle=0)
-    config = collections.namedtuple('Config', ['log_dir'])('results')
+        learning_rate=1e-3, clipnorm=100)
+    train_dataset = make_dataset('train_dataset', repeat=3, shuffle=0)
+    config = collections.namedtuple('Config', ['log_dir'])('results_1em3')
     logger = utils.TrainingLogger(config)
     for i, batch in enumerate(train_dataset):
         grads, loss, log_p_obs, total_kl = grad(model, batch)
