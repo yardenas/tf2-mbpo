@@ -5,7 +5,6 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
-import tensorflow_probability as tfp
 from tensorflow_probability import distributions as tfd
 
 import mbpo.models as models
@@ -92,33 +91,39 @@ def observe_sequence(model, samples):
     horizon = tf.shape(next_observations)[1]
     embeddings = model._observation_encoder(next_observations)
     belief = model.reset(tf.shape(actions)[0], True)
-    sequence_results = {'stochastics': tf.TensorArray(tf.float32, horizon),
-                        'deterministics': tf.TensorArray(tf.float32, horizon),
-                        'prior_mus': tf.TensorArray(tf.float32, horizon),
-                        'prior_stddevs': tf.TensorArray(tf.float32, horizon),
-                        'posterior_mus': tf.TensorArray(tf.float32, horizon),
-                        'posterior_stddevs': tf.TensorArray(tf.float32, horizon)}
+    predictions = {'deterministics': tf.TensorArray(tf.float32, horizon),
+                   'prior_mus': tf.TensorArray(tf.float32, horizon),
+                   'prior_stddevs': tf.TensorArray(tf.float32, horizon)}
     seeds = tf.cast(rng.make_seeds(horizon), tf.int32)
     for t in tf.range(horizon):
-        predict_seeds, correct_seeds = tfp.random.split_seed(seeds[:, t], 2, "observe_sequence")
-        prior, belief_prediction = model.predict(actions[:, t], belief, seed=predict_seeds)
-        posterior, belief = model._correct(embeddings[:, t], belief, belief_prediction, prior,
-                                           seed=correct_seeds)
-        sequence_results['stochastics'] = sequence_results['stochastics'].write(
-            t, belief['stochastic'])
-        sequence_results['deterministics'] = sequence_results['deterministics'].write(
+        prior, belief = model.predict(actions[:, t], belief, embeddings[:, t], seed=seeds[:, t])
+        predictions['deterministics'] = predictions['deterministics'].write(
             t, belief['deterministic'])
-        sequence_results['prior_mus'] = sequence_results['prior_mus'].write(t, prior.mean())
-        sequence_results['prior_stddevs'] = sequence_results['prior_stddevs'].write(
+        predictions['prior_mus'] = predictions['prior_mus'].write(t, prior.mean())
+        predictions['prior_stddevs'] = predictions['prior_stddevs'].write(
             t, prior.stddev())
-        sequence_results['posterior_mus'] = sequence_results['posterior_mus'].write(
+    stacked_predictions = {k: tf.transpose(v.stack(), [1, 0, 2]) for k, v in predictions.items()}
+    smoothed = model._smooth(stacked_predictions['deterministics'], embeddings)
+    inferred = {'stochastics': tf.TensorArray(tf.float32, horizon),
+                'posterior_mus': tf.TensorArray(tf.float32, horizon),
+                'posterior_stddevs': tf.TensorArray(tf.float32, horizon)}
+    seeds = tf.cast(rng.make_seeds(horizon), tf.int32)
+    z_t = model.reset(tf.shape(actions)[0], True)['stochastic']
+    for t in tf.range(horizon):
+        posterior, z_t = model._correct(
+            smoothed[:, t], z_t, stacked_predictions['prior_mus'][:, t], seeds[:, t])
+        inferred['stochastics'] = inferred['stochastics'].write(t, z_t)
+        inferred['posterior_mus'] = inferred['posterior_mus'].write(
             t, posterior.mean())
-        sequence_results['posterior_stddevs'] = sequence_results['posterior_stddevs'].write(
+        inferred['posterior_stddevs'] = inferred['posterior_stddevs'].write(
             t, posterior.stddev())
-    stacked = {k: tf.transpose(v.stack(), [1, 0, 2]) for k, v in sequence_results.items()}
-    features = tf.concat([stacked['stochastics'], stacked['deterministics']], -1)
-    prior = tfd.MultivariateNormalDiag(stacked['prior_mus'], stacked['prior_stddevs'])
-    posterior = tfd.MultivariateNormalDiag(stacked['posterior_mus'], stacked['posterior_stddevs'])
+    stacked_inferred = {k: tf.transpose(v.stack(), [1, 0, 2]) for k, v in inferred.items()}
+    features = tf.concat([stacked_inferred['stochastics'],
+                          stacked_predictions['deterministics']], -1)
+    prior = tfd.MultivariateNormalDiag(stacked_predictions['prior_mus'],
+                                       stacked_predictions['prior_stddevs'])
+    posterior = tfd.MultivariateNormalDiag(stacked_inferred['posterior_mus'],
+                                           stacked_inferred['posterior_stddevs'])
     return features, prior, posterior
 
 

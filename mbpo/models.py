@@ -1,5 +1,4 @@
 import tensorflow as tf
-import tensorflow_probability as tfp
 from tensorflow_probability import distributions as tfd
 
 import mbpo.building_blocks as blocks
@@ -13,8 +12,7 @@ class WorldModel(tf.Module):
                  terminal_layers=1, activation=tf.nn.relu):
         super().__init__()
         self._cell = tf.keras.layers.GRUCell(deterministic_size)
-        self._g = tf.keras.Sequential(
-            [tf.keras.layers.Dense(units, activation) for _ in range(1)])
+        self._g = tf.keras.layers.GRU(deterministic_size, return_sequences=True, go_backwards=True)
         self._observation_encoder = blocks.encoder(observation_type, observation_shape,
                                                    observation_layers, units)
         self._observation_decoder = blocks.decoder(observation_type, observation_shape, 3, units)
@@ -34,50 +32,40 @@ class WorldModel(tf.Module):
         self._kl_scale = kl_scale
 
     def __call__(self, belief, horizon, actions=None, actor=None):
-        seeds = tf.cast(self._rng.make_seeds(horizon), tf.int32)
-        features = tf.concat([belief['stochastic'], belief['deterministic']], -1)
-        all_features = [features]
-        ##### TODO (yardeb))!!!!! think if belief and actions are of the same time step@@@
-        for t in range(horizon):
-            action_seed, obs_seed = tfp.random.split_seed(seeds[:, t], 2, "imagine_rollouts")
-            action = actor(tf.stop_gradient(features)).sample(
-                seed=action_seed) if actions is None else actions[:, t, ...]
-            prior, belief = self.predict(action, belief, seed=obs_seed)
-            features.append(tf.concat(belief['stochastic'], belief['deterministic'], -1))
-        return tf.stack(all_features, 1)
+        pass
+        # TODO (yarden): make sure that action is one step *behind* observation
+        # prior, prediction = self.predict(action, self._current_belief)
+        # embeddings = self._observation_encoder(observation)
+        # _, self._current_belief = self._correct(
+        # embeddings, self._current_belief, prediction, prior)
 
-    def predict(self, prev_action, prev_belief, seed=None):
-        u_t = tf.concat([prev_belief['stochastic'], prev_action], -1)
+    def predict(self, prev_action, prev_belief, prev_embeddings, seed=None):
+        u_t = tf.concat([prev_embeddings, prev_action], -1)
         d_t, _ = self._cell(u_t, prev_belief['deterministic'])
         d_t_z_t_1 = tf.concat([prev_belief['stochastic'], d_t], -1)
         prior_mu, prior_stddev = tf.split(self._prior_decoder(d_t_z_t_1), 2, -1)
         prior_stddev = tf.math.softplus(prior_stddev) + 0.1
         prior = tfd.MultivariateNormalDiag(prior_mu, prior_stddev)
         z_t = prior.sample(seed=seed)
-        return prior, {'stochastic': z_t,
-                       'deterministic': d_t}
+        return prior, {'stochastic': z_t, 'deterministic': d_t}
 
-    def _correct(self, embeddings, prev_belief, prediction, prior, seed=None):
-        z_t_1 = prev_belief['stochastic']
-        d_t = prediction['deterministic']
-        a_t = self._g(tf.concat([d_t, embeddings], -1))
+    def _correct(self, current_smoothed, prev_stochastic, prior_mu, seed=None):
+        # Name alias to keep naming convention of https://arxiv.org/pdf/1605.07571.pdf
+        z_t_1 = prev_stochastic
+        a_t = current_smoothed
         # The posterior decoder predicts the residual mean from the prior, as suggested in
         # https://arxiv.org/pdf/1605.07571.pdf (eq. 12)
         posterior_mu_residual, posterior_stddev = tf.split(
             self._posterior_decoder(tf.concat([z_t_1, a_t], -1)), 2, -1)
-        posterior_mu = posterior_mu_residual + tf.stop_gradient(prior.mean())
+        posterior_mu = posterior_mu_residual + tf.stop_gradient(prior_mu)
         posterior_stddev = tf.math.softplus(posterior_stddev) + 0.1
         posterior = tfd.MultivariateNormalDiag(posterior_mu, posterior_stddev)
         z_t = posterior.sample(seed=seed)
-        return posterior, {'stochastic': z_t,
-                           'deterministic': d_t}
+        return posterior, z_t
 
-    def update_belief(self, observation, action):
-        # TODO (yarden): make sure that action is one step *behind* observation
-        prior, prediction = self.predict(action, self._current_belief)
-        embeddings = self._observation_encoder(observation)
-        _, self._current_belief = self._correct(
-            embeddings, self._current_belief, prediction, prior)
+    def _smooth(self, deterministic_states, embeddings):
+        cat = tf.concat([deterministic_states, embeddings], -1)
+        return tf.reverse(self._g(cat), [1])
 
     def reset(self, batch_size, training=False):
         initial = {'stochastic': tf.zeros([batch_size, self._stochastic_size], tf.float32),
