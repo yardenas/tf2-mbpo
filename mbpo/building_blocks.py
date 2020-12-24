@@ -48,17 +48,18 @@ class ConvEncoder(tf.Module):
         self._shape = shape
         self._depth = depth
         self._layers = tf.keras.Sequential(
-            [tf.keras.layers.Conv2D(depth, 4, activation=activation, strides=2,
-                                    input_shape=self._shape),
+            [tf.keras.layers.Conv2D(depth, 4, activation=activation, dilation_rate=2,
+                                    input_shape=(None,) + self._shape),
              tf.keras.layers.Conv2D(2 * depth, 4, activation=activation, strides=2),
              tf.keras.layers.Conv2D(4 * depth, 4, activation=activation, strides=2),
              tf.keras.layers.Conv2D(8 * depth, 4, activation=activation, strides=2)])
+        self._to_embeddings = tf.keras.layers.GlobalAveragePooling2D()
 
     def __call__(self, inputs):
-        x = tf.reshape(inputs, (-1,) + tuple(self._shape))
-        x = self._layers(x)
-        shape = tf.concat([tf.shape(inputs)[:-len(self._shape)], [32 * self._depth]], 0)
-        return tf.reshape(x, shape)
+        x = self._layers(inputs)
+        x = tf.reshape(x, tf.concat([[-1], tf.shape(x)[-3:]], 0))
+        x = self._to_embeddings(x)
+        return tf.reshape(x, tf.concat([tf.shape(inputs)[:-3], [tf.shape(x)[-1]]], 0))
 
 
 class DenseDecoder(tf.Module):
