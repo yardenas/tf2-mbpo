@@ -13,7 +13,7 @@ class WorldModel(tf.Module):
                  terminal_layers=1, activation=tf.nn.relu):
         super().__init__()
         self._cell = tf.keras.layers.GRUCell(deterministic_size)
-        self._g = tf.keras.layers.GRU(deterministic_size, return_sequences=True)
+        self._g = tf.keras.layers.GRU(deterministic_size, return_sequences=True, go_backwards=True)
         self._observation_encoder = blocks.encoder(observation_type, observation_shape,
                                                    observation_layers, units)
         self._observation_decoder = blocks.decoder(observation_type, observation_shape, 3, units)
@@ -70,7 +70,6 @@ class WorldModel(tf.Module):
 
     def _smooth(self, deterministic_states, embeddings):
         cat = tf.concat([deterministic_states, embeddings], -1)
-        cat = tf.reverse(cat, [1])
         return tf.reverse(self._g(cat), [1])
 
     def reset(self, batch_size, training=False):
