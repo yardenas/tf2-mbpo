@@ -30,7 +30,7 @@ def load_data(data_dir, prefix='train'):
         sequence_batch = load_sequence(file_path)
         for i in range(sequence_batch.shape[0]):
             yield {'observation': np.array(sequence_batch[i], np.float32)[..., None],
-                   'action': np.zeros([sequence_batch[i].shape[0], 1], np.float32)}
+                   'action': np.zeros([sequence_batch[i].shape[0] - 1, 1], np.float32)}
 
 
 def show_sequence(sequence, figname=None):
@@ -54,7 +54,7 @@ def make_dataset(dir, prefix='train', repeat=0, shuffle=0, seed=0, batch_size=16
                                              output_types={'observation': np.float32,
                                                            'action': np.float32},
                                              output_shapes={'observation': [50, 64, 64, 1],
-                                                            'action': [50, 1]})
+                                                            'action': [49, 1]})
     dataset = dataset.map(lambda data: {k: tf.where(
         utils.preprocess(v) > 0.0, 1.0, 0.0) for k, v in data.items()})
     if shuffle:
@@ -107,21 +107,21 @@ def main():
     train_dataset = make_dataset('dataset', repeat=1, shuffle=0)
     config = collections.namedtuple('Config', ['log_dir'])('results_5e_5')
     logger = utils.TrainingLogger(config)
-    # for i, batch in enumerate(train_dataset):
-    #     reconstruct = (i % 100) == 0
-    #     grads, loss, log_p_obs, total_kl, reconstructed_sequence = inference_step(
-    #         model, batch, reconstruct)
-    #     logger['loss'].update_state(loss)
-    #     logger['log_probs'].update_state(log_p_obs)
-    #     logger['kl'].update_state(total_kl)
-    #     optimizer.apply_gradients(zip(grads, model.trainable_variables))
-    #     if (i % 50) == 0:
-    #         logger.log_metrics(i)
-    #     if reconstruct:
-    #         logger.log_video(tf.transpose(reconstructed_sequence[:3], [0, 1, 4, 2, 3]).numpy(), i,
-    #                          "reconstructed_sequence")
-    #         logger.log_video(tf.transpose(batch['observation'][:3], [0, 1, 4, 2, 3]).numpy(), i,
-    #                          "true_sequence")
+    for i, batch in enumerate(train_dataset):
+        reconstruct = (i % 100) == 0
+        grads, loss, log_p_obs, total_kl, reconstructed_sequence = inference_step(
+            model, batch, reconstruct)
+        logger['loss'].update_state(loss)
+        logger['log_probs'].update_state(log_p_obs)
+        logger['kl'].update_state(total_kl)
+        optimizer.apply_gradients(zip(grads, model.trainable_variables))
+        if (i % 50) == 0:
+            logger.log_metrics(i)
+        if reconstruct:
+            logger.log_video(tf.transpose(reconstructed_sequence[:3], [0, 1, 4, 2, 3]).numpy(), i,
+                             "reconstructed_sequence")
+            logger.log_video(tf.transpose(batch['observation'][:3], [0, 1, 4, 2, 3]).numpy(), i,
+                             "true_sequence")
     test_dataset = make_dataset('dataset', 'test')
     for i, batch in enumerate(test_dataset):
         reconstructed_sequence, elbo, last_belief = reconstruct_sequence(model, batch)
