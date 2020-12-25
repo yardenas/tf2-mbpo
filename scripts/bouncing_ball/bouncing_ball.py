@@ -1,5 +1,6 @@
 import collections
 import os
+
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 import matplotlib
 import matplotlib.pyplot as plt
@@ -28,7 +29,8 @@ def load_data(data_dir, prefix='train'):
     for file_path in data:
         sequence_batch = load_sequence(file_path)
         for i in range(sequence_batch.shape[0]):
-            yield np.array(sequence_batch[i], np.float32)[..., None]
+            yield {'observation': np.array(sequence_batch[i], np.float32)[..., None],
+                   'action': np.zeros([sequence_batch[i].shape[0], 1], np.float32)}
 
 
 def show_sequence(sequence, figname=None):
@@ -49,10 +51,12 @@ def show_sequence(sequence, figname=None):
 
 def make_dataset(dir, prefix='train', repeat=0, shuffle=0, seed=0, batch_size=16):
     dataset = tf.data.Dataset.from_generator(lambda: load_data(dir, prefix=prefix),
-                                             output_types=np.uint8,
-                                             output_shapes=[50, 64, 64, 1])
-    dataset = dataset.map(lambda data: tf.where(
-        utils.preprocess(data) > 0.0, 1.0, 0.0))
+                                             output_types={'observation': np.float32,
+                                                           'action': np.float32},
+                                             output_shapes={'observation': [50, 64, 64, 1],
+                                                            'action': [50, 1]})
+    dataset = dataset.map(lambda data: {k: tf.where(
+        utils.preprocess(v) > 0.0, 1.0, 0.0) for k, v in data.items()})
     if shuffle:
         dataset = dataset.shuffle(shuffle, seed, reshuffle_each_iteration=True)
     if repeat:
@@ -63,68 +67,35 @@ def make_dataset(dir, prefix='train', repeat=0, shuffle=0, seed=0, batch_size=16
 
 
 @tf.function
-def grad(model, batch):
+def inference_step(model, batch, reconstruct=False):
     with tf.GradientTape() as tape:
-        features, prior, posterior = observe_sequence(model, batch)
-        kl = tf.reduce_mean(tf.reduce_sum(tfd.kl_divergence(posterior, prior), 1))
-        log_p_observations = tf.reduce_mean(tf.reduce_sum(
-            model._observation_decoder(features).log_prob(batch), 1))
-        horizon = tf.cast(tf.shape(batch)[1], tf.float32)
-        loss = -log_p_observations + model._kl_scale * tf.maximum(model._free_nats * horizon, kl)
-    return tape.gradient(loss, model.trainable_variables), loss, log_p_observations, kl
+        loss, kl, log_p_observations, reconstructed = model.inference_step(batch)
+    reconstructed_sequences = reconstructed.mode() if reconstruct else None
+    return tape.gradient(
+        loss, model.trainable_variables), loss, log_p_observations, kl, reconstructed_sequences
 
 
 @tf.function
-def reconstruct(model, batch):
-    features, prior, posterior = observe_sequence(model, batch)
+def reconstruct_sequence(model, batch):
+    beliefs, prior, posterior = model.observe_sequence(batch)
     kl = tf.reduce_mean(tf.reduce_sum(tfd.kl_divergence(posterior, prior), 1))
+    features = tf.concat([beliefs['stochastic'],
+                          beliefs['deterministic']], -1)
+    reconstructed = model._observation_decoder(features)
     log_p_observations = tf.reduce_mean(tf.reduce_sum(
-        model._observation_decoder(features).log_prob(batch), 1))
-    horizon = tf.cast(tf.shape(batch)[1], tf.float32)
+        reconstructed.log_prob(batch['observation'][:, 1:]), 1))
+    horizon = tf.cast(tf.shape(batch['observation'])[1], tf.float32) - 1.0
     loss = -log_p_observations + model._kl_scale * tf.maximum(model._free_nats * horizon, kl)
-    return model._observation_decoder(features).mode(), loss
+    return reconstructed.mode(), loss, {'stochastic': beliefs['stochastic'][:, -1],
+                                        'deterministic': beliefs['deterministic'][:, -1]}
 
 
-def observe_sequence(model, samples):
-    next_observations = samples
-    actions = tf.zeros(tf.concat([tf.shape(samples)[:2], [1]], 0))
-    horizon = tf.shape(next_observations)[1]
-    embeddings = model._observation_encoder(next_observations)
-    belief = model.reset(tf.shape(actions)[0], True)
-    predictions = {'deterministics': tf.TensorArray(tf.float32, horizon),
-                   'prior_mus': tf.TensorArray(tf.float32, horizon),
-                   'prior_stddevs': tf.TensorArray(tf.float32, horizon)}
-    seeds = tf.cast(rng.make_seeds(horizon), tf.int32)
-    for t in tf.range(horizon):
-        prior, belief = model.predict(actions[:, t], belief, embeddings[:, t], seed=seeds[:, t])
-        predictions['deterministics'] = predictions['deterministics'].write(
-            t, belief['deterministic'])
-        predictions['prior_mus'] = predictions['prior_mus'].write(t, prior.mean())
-        predictions['prior_stddevs'] = predictions['prior_stddevs'].write(
-            t, prior.stddev())
-    stacked_predictions = {k: tf.transpose(v.stack(), [1, 0, 2]) for k, v in predictions.items()}
-    smoothed = model._smooth(stacked_predictions['deterministics'], embeddings)
-    inferred = {'stochastics': tf.TensorArray(tf.float32, horizon),
-                'posterior_mus': tf.TensorArray(tf.float32, horizon),
-                'posterior_stddevs': tf.TensorArray(tf.float32, horizon)}
-    seeds = tf.cast(rng.make_seeds(horizon), tf.int32)
-    z_t = model.reset(tf.shape(actions)[0], True)['stochastic']
-    for t in tf.range(horizon):
-        posterior, z_t = model._correct(
-            smoothed[:, t], z_t, stacked_predictions['prior_mus'][:, t], seeds[:, t])
-        inferred['stochastics'] = inferred['stochastics'].write(t, z_t)
-        inferred['posterior_mus'] = inferred['posterior_mus'].write(
-            t, posterior.mean())
-        inferred['posterior_stddevs'] = inferred['posterior_stddevs'].write(
-            t, posterior.stddev())
-    stacked_inferred = {k: tf.transpose(v.stack(), [1, 0, 2]) for k, v in inferred.items()}
-    features = tf.concat([stacked_inferred['stochastics'],
-                          stacked_predictions['deterministics']], -1)
-    prior = tfd.MultivariateNormalDiag(stacked_predictions['prior_mus'],
-                                       stacked_predictions['prior_stddevs'])
-    posterior = tfd.MultivariateNormalDiag(stacked_inferred['posterior_mus'],
-                                           stacked_inferred['posterior_stddevs'])
-    return features, prior, posterior
+@tf.function
+def generate_sequence(model, initial_belief):
+    horizon = 20
+    actions = tf.zeros([tf.shape(initial_belief['stochastic'])[0], horizon, 1], tf.float32)
+    features = model.generate_sequence(initial_belief, horizon, actions=actions)
+    return model._observation_decoder(features).mode()
 
 
 def main():
@@ -137,30 +108,33 @@ def main():
     config = collections.namedtuple('Config', ['log_dir'])('results_5e_5')
     logger = utils.TrainingLogger(config)
     for i, batch in enumerate(train_dataset):
-        grads, loss, log_p_obs, total_kl = grad(model, batch)
+        reconstruct = (i % 100) == 0
+        grads, loss, log_p_obs, total_kl, reconstructed_sequence = inference_step(
+            model, batch, reconstruct)
         logger['loss'].update_state(loss)
         logger['log_probs'].update_state(log_p_obs)
         logger['kl'].update_state(total_kl)
         optimizer.apply_gradients(zip(grads, model.trainable_variables))
         if (i % 50) == 0:
             logger.log_metrics(i)
-        if (i % 100) == 0:
-            reconstructed_sequence, elbo = reconstruct(model, batch)
+        if reconstruct:
             logger.log_video(tf.transpose(reconstructed_sequence[:3], [0, 1, 4, 2, 3]).numpy(), i,
                              "reconstructed_sequence")
-            logger.log_video(tf.transpose(batch[:3], [0, 1, 4, 2, 3]).numpy(), i,
+            logger.log_video(tf.transpose(batch['observation'][:3], [0, 1, 4, 2, 3]).numpy(), i,
                              "true_sequence")
-
     test_dataset = make_dataset('dataset', 'test')
     for i, batch in enumerate(test_dataset):
-        reconstructed_sequence, elbo = reconstruct(model, batch)
+        reconstructed_sequence, elbo, last_belief = reconstruct_sequence(model, batch)
         logger['test_elbo'].update_state(elbo)
         if (i % 50) == 0:
             print("Test ELBO: {}".format(logger['test_elbo'].result()))
             logger.log_video(tf.transpose(reconstructed_sequence[:3], [0, 1, 4, 2, 3]).numpy(), i,
                              "reconstructed_sequence")
-            logger.log_video(tf.transpose(batch[:3], [0, 1, 4, 2, 3]).numpy(), i,
+            logger.log_video(tf.transpose(batch['observation'][:3], [0, 1, 4, 2, 3]).numpy(), i,
                              "true_sequence")
+            generated_sequence = generate_sequence(model, last_belief)
+            logger.log_video(tf.transpose(generated_sequence, [0, 1, 4, 2, 3]).numpy(), i,
+                             "genereated_sequence")
 
 
 if __name__ == '__main__':

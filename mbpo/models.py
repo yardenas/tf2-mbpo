@@ -1,4 +1,5 @@
 import tensorflow as tf
+import tensorflow_probability as tfp
 from tensorflow_probability import distributions as tfd
 
 import mbpo.building_blocks as blocks
@@ -31,13 +32,17 @@ class WorldModel(tf.Module):
         self._free_nats = float(free_nats)
         self._kl_scale = kl_scale
 
-    def __call__(self, belief, horizon, actions=None, actor=None):
-        pass
-        # TODO (yarden): make sure that action is one step *behind* observation
-        # prior, prediction = self.predict(action, self._current_belief)
-        # embeddings = self._observation_encoder(observation)
-        # _, self._current_belief = self._correct(
-        # embeddings, self._current_belief, prediction, prior)
+    def __call__(self, prev_embeddings, prev_action, current_observation):
+        seeds = tf.cast(self._rng.make_seeds(), tf.int32)
+        predict_seed, correct_seed = tfp.random.split_seed(seeds[:, 0], 2, "update_belief")
+        prior, belief = self.predict(prev_action, prev_embeddings,
+                                     self._current_belief, predict_seed)
+        current_embeddings = self._observation_encoder(current_observation[:, None, ...])
+        smoothed = self._smooth(belief['deterministic'][:, None, ...],
+                                current_embeddings[:, None, ...])
+        _, z_t = self._correct(smoothed, self._current_belief['stochastic'],
+                               prior.mean(), correct_seed)
+        self._current_belief = {'stochastic': z_t, 'deterministic': belief['deterministic']}
 
     def predict(self, prev_action, prev_belief, prev_embeddings, seed=None):
         u_t = tf.concat([prev_embeddings, prev_action], -1)
@@ -74,37 +79,76 @@ class WorldModel(tf.Module):
             self._current_belief = initial
         return initial
 
-    def compute_loss(self, batch):
-        # TODO (yarden): why next observation? because to infer o_t we need a_t-1
-        next_observations = batch['next_observation']
+    def observe_sequence(self, batch):
+        embeddings = self._observation_encoder(batch['observation'])
+        prev_embeddings = embeddings[:, :-1]
+        belief = self.reset(tf.shape(prev_embeddings)[0], True)
+        horizon = tf.shape(prev_embeddings)[1]
+        predictions = {'deterministics': tf.TensorArray(tf.float32, horizon),
+                       'prior_mus': tf.TensorArray(tf.float32, horizon),
+                       'prior_stddevs': tf.TensorArray(tf.float32, horizon)}
+        seeds = tf.cast(self._rng.make_seeds(horizon), tf.int32)
         actions = batch['action']
-        horizon = tf.shape(next_observations)[1]
-        embeddings = self._observation_encoder(next_observations)
-        belief = self.reset(tf.shape(actions)[0], True)
-        total_kl = 0.0
-        stochastics = []
-        deterministics = []
-        # TODO (yarden): maybe should stop the gradient here for prev belief?
-        # In trainig should we feed in the actual images or z_t_1 as imput????????
-        # In prediction for sure z_t_1 because we don't want to generate image at every timestep
-        for t in range(horizon):
-            prior, belief_prediction = self.predict(actions[:, t], belief)
-            posterior, belief = self._correct(embeddings[:, t], belief, belief_prediction, prior)
-            stochastics.append(belief['stochastic'])
-            deterministics.append(belief['deterministic'])
-            kl = tf.reduce_mean(tfd.kl_divergence(posterior, prior))
-            kl = self._kl_scale * tf.maximum(kl, self._free_nats)
-            total_kl += kl
-        features = tf.concat([tf.stack(stochastics, 1), tf.stack(deterministics, 1)], -1)
-        rewards = batch['reward']
-        log_p_rewards = tf.reduce_mean(self._reward_decoder(features).log_prob(rewards))
-        terminals = batch['terminal']
-        log_p_terminals = tf.reduce_mean(self._terminal_decoder(features).log_prob(terminals))
-        log_p_observations = tf.reduce_mean(
-            self._observation_decoder(features).log_prob(next_observations))
-        loss = self._kl_scale * tf.maximum(
-            total_kl, self._free_nats) - (log_p_rewards + log_p_observations + log_p_terminals)
-        return loss, log_p_rewards, log_p_terminals, log_p_observations, total_kl
+        for t in tf.range(horizon):
+            prior, belief = self.predict(actions[:, t], belief, prev_embeddings[:, t],
+                                         seed=seeds[:, t])
+            predictions['deterministics'] = predictions['deterministics'].write(
+                t, belief['deterministic'])
+            predictions['prior_mus'] = predictions['prior_mus'].write(t, prior.mean())
+            predictions['prior_stddevs'] = predictions['prior_stddevs'].write(
+                t, prior.stddev())
+        stacked_predictions = {k: tf.transpose(v.stack(), [1, 0, 2]) for k, v in
+                               predictions.items()}
+        current_embeddings = embeddings[:, 1:]
+        smoothed = self._smooth(stacked_predictions['deterministics'], current_embeddings)
+        inferred = {'stochastics': tf.TensorArray(tf.float32, horizon),
+                    'posterior_mus': tf.TensorArray(tf.float32, horizon),
+                    'posterior_stddevs': tf.TensorArray(tf.float32, horizon)}
+        seeds = tf.cast(self._rng.make_seeds(horizon), tf.int32)
+        z_t = self.reset(tf.shape(actions)[0], True)['stochastic']
+        for t in tf.range(horizon):
+            posterior, z_t = self._correct(
+                smoothed[:, t], z_t, stacked_predictions['prior_mus'][:, t], seeds[:, t])
+            inferred['stochastics'] = inferred['stochastics'].write(t, z_t)
+            inferred['posterior_mus'] = inferred['posterior_mus'].write(
+                t, posterior.mean())
+            inferred['posterior_stddevs'] = inferred['posterior_stddevs'].write(
+                t, posterior.stddev())
+        stacked_inferred = {k: tf.transpose(v.stack(), [1, 0, 2]) for k, v in inferred.items()}
+        beliefs = {'stochastic': stacked_inferred['stochastics'],
+                   'deterministic': stacked_predictions['deterministics']}
+        prior = tfd.MultivariateNormalDiag(stacked_predictions['prior_mus'],
+                                           stacked_predictions['prior_stddevs'])
+        posterior = tfd.MultivariateNormalDiag(stacked_inferred['posterior_mus'],
+                                               stacked_inferred['posterior_stddevs'])
+        return beliefs, prior, posterior
+
+    def inference_step(self, batch):
+        beliefs, prior, posterior = self.observe_sequence(batch)
+        kl = tf.reduce_mean(tf.reduce_sum(tfd.kl_divergence(posterior, prior), 1))
+        features = tf.concat([beliefs['stochastic'],
+                              beliefs['deterministic']], -1)
+        reconstructed = self._observation_decoder(features)
+        log_p_observations = tf.reduce_mean(tf.reduce_sum(
+            reconstructed.log_prob(batch['observation'][:, 1:]), 1))
+        horizon = tf.cast(tf.shape(batch['observation'])[1], tf.float32) - 1.0
+        loss = -log_p_observations + self._kl_scale * tf.maximum(self._free_nats * horizon, kl)
+        return loss, kl, log_p_observations, reconstructed
+
+    def generate_sequence(self, initial_belief, horizon, actor=None, actions=None):
+        sequence_features = tf.TensorArray(tf.float32, horizon)
+        features = tf.concat([initial_belief['stochastic'], initial_belief['deterministic']], -1)
+        belief = initial_belief
+        seeds = tf.cast(self._rng.make_seeds(horizon), tf.int32)
+        for t in tf.range(horizon):
+            action = actor(tf.stop_gradient(features)
+                           ).sample() if actions is None else actions[:, t]
+            embeddings = tf.squeeze(self._observation_encoder(
+                self._observation_decoder(features[:, None, ...]).mode()), 1)
+            _, belief = self.predict(action, belief, embeddings, seeds[:, t])
+            features = tf.concat([belief['stochastic'], belief['deterministic']], -1)
+            sequence_features = sequence_features.write(t, features)
+        return tf.transpose(sequence_features.stack(), [1, 0, 2])
 
 
 class Actor(tf.Module):
