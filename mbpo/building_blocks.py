@@ -48,7 +48,7 @@ class ConvEncoder(tf.Module):
         self._shape = shape
         self._depth = depth
         self._layers = tf.keras.Sequential(
-            [tf.keras.layers.Conv2D(depth, 4, activation=activation, dilation_rate=2,
+            [tf.keras.layers.Conv2D(depth, 4, activation=activation, strides=2,
                                     input_shape=(None,) + self._shape),
              tf.keras.layers.Conv2D(2 * depth, 4, activation=activation, strides=2),
              tf.keras.layers.Conv2D(4 * depth, 4, activation=activation, strides=2),

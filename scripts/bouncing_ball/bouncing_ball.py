@@ -107,21 +107,21 @@ def main():
     train_dataset = make_dataset('dataset', repeat=1, shuffle=0)
     config = collections.namedtuple('Config', ['log_dir'])('results_5e_5')
     logger = utils.TrainingLogger(config)
-    for i, batch in enumerate(train_dataset):
-        reconstruct = (i % 100) == 0
-        grads, loss, log_p_obs, total_kl, reconstructed_sequence = inference_step(
-            model, batch, reconstruct)
-        logger['loss'].update_state(loss)
-        logger['log_probs'].update_state(log_p_obs)
-        logger['kl'].update_state(total_kl)
-        optimizer.apply_gradients(zip(grads, model.trainable_variables))
-        if (i % 50) == 0:
-            logger.log_metrics(i)
-        if reconstruct:
-            logger.log_video(tf.transpose(reconstructed_sequence[:3], [0, 1, 4, 2, 3]).numpy(), i,
-                             "reconstructed_sequence")
-            logger.log_video(tf.transpose(batch['observation'][:3], [0, 1, 4, 2, 3]).numpy(), i,
-                             "true_sequence")
+    # for i, batch in enumerate(train_dataset):
+    #     reconstruct = (i % 100) == 0
+    #     grads, loss, log_p_obs, total_kl, reconstructed_sequence = inference_step(
+    #         model, batch, reconstruct)
+    #     logger['loss'].update_state(loss)
+    #     logger['log_probs'].update_state(log_p_obs)
+    #     logger['kl'].update_state(total_kl)
+    #     optimizer.apply_gradients(zip(grads, model.trainable_variables))
+    #     if (i % 50) == 0:
+    #         logger.log_metrics(i)
+    #     if reconstruct:
+    #         logger.log_video(tf.transpose(reconstructed_sequence[:3], [0, 1, 4, 2, 3]).numpy(), i,
+    #                          "reconstructed_sequence")
+    #         logger.log_video(tf.transpose(batch['observation'][:3], [0, 1, 4, 2, 3]).numpy(), i,
+    #                          "true_sequence")
     test_dataset = make_dataset('dataset', 'test')
     for i, batch in enumerate(test_dataset):
         reconstructed_sequence, elbo, last_belief = reconstruct_sequence(model, batch)
