@@ -72,7 +72,7 @@ class WorldModel(tf.Module):
         cat = tf.concat([embeddings, actions], -1)
         deterministics = tf.TensorArray(tf.float32, shape[1])
         for t in tf.range(shape[1]):
-            dt, _ = self._f(cat[:, t], d_t)
+            d_t, _ = self._f(cat[:, t], d_t)
             deterministics = deterministics.write(t, d_t)
         return tf.transpose(deterministics.stack(), [1, 0, 2])
 
