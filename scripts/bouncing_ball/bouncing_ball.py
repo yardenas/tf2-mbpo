@@ -92,7 +92,7 @@ def reconstruct_sequence(model, batch):
 
 @tf.function
 def generate_sequence(model, initial_belief):
-    horizon = 20
+    horizon = 50
     actions = tf.zeros([tf.shape(initial_belief['stochastic'])[0], horizon, 1], tf.float32)
     features = model.generate_sequence(initial_belief, horizon, actions=actions)
     return model._observation_decoder(features).mode()
@@ -129,12 +129,13 @@ def main():
         if (i % 50) == 0:
             print("Test ELBO: {}".format(logger['test_elbo'].result()))
             logger.log_video(tf.transpose(reconstructed_sequence[:3], [0, 1, 4, 2, 3]).numpy(), i,
-                             "reconstructed_sequence")
+                             "test_reconstructed_sequence")
             logger.log_video(tf.transpose(batch['observation'][:3], [0, 1, 4, 2, 3]).numpy(), i,
-                             "true_sequence")
+                             "test_true_sequence")
             generated_sequence = generate_sequence(model, last_belief)
-            logger.log_video(tf.transpose(generated_sequence, [0, 1, 4, 2, 3]).numpy(), i,
-                             "genereated_sequence")
+            logger.log_video(tf.transpose(generated_sequence[:3], [0, 1, 4, 2, 3]).numpy(), i,
+                             "test_genereated_sequence")
+    print("Done!")
 
 
 if __name__ == '__main__':
