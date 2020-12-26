@@ -25,9 +25,9 @@ def define_config():
         'batch_size': 50,
         'warmup_training_steps': 5000,
         # MODELS
-        'dynamics_layers': 2,
-        'cell_size': 128,
-        'units': 128,
+        'deterministic_size': 200,
+        'stochastic_size': 30,
+        'units': 400,
         'posterior_samples': 5,
         'model_learning_rate': 2.5e-4,
         'actor_learning_rate': 3e-5,
@@ -39,6 +39,7 @@ def define_config():
         'total_training_steps': 100000,
         'action_repeat': 3,
         'environment': 'Pendulum-v0',
+        'observation_type': 'rgb_image',
         'seed': 314,
         'steps_per_log': 1000,
         'episode_length': 1000,
@@ -86,9 +87,9 @@ def train(config):
     return agent, test_env
 
 
-def make_config():
+def make_config(config):
     parser = argparse.ArgumentParser()
-    for key, value in define_config().items():
+    for key, value in config.items():
         parser.add_argument('--{}'.format(key), type=type(value) if value else str, default=value)
     return parser.parse_args()
 

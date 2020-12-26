@@ -96,7 +96,7 @@ def observe_sequence(model, samples):
                    'prior_stddevs': tf.TensorArray(tf.float32, horizon)}
     seeds = tf.cast(rng.make_seeds(horizon), tf.int32)
     for t in tf.range(horizon):
-        prior, belief = model.predict(actions[:, t], belief, embeddings[:, t], seed=seeds[:, t])
+        prior, belief = model._predict(actions[:, t], belief, embeddings[:, t], seed=seeds[:, t])
         predictions['deterministics'] = predictions['deterministics'].write(
             t, belief['deterministic'])
         predictions['prior_mus'] = predictions['prior_mus'].write(t, prior.mean())

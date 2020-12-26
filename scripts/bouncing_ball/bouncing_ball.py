@@ -1,4 +1,3 @@
-import collections
 import os
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
@@ -6,10 +5,10 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
-from tensorflow_probability import distributions as tfd
 
-import mbpo.models as models
+import mbpo.world_models as models
 import mbpo.utils as utils
+import scripts.train as train_utils
 
 rng = tf.random.Generator.from_seed(0)
 
@@ -66,75 +65,42 @@ def make_dataset(dir, prefix='train', repeat=0, shuffle=0, seed=0, batch_size=16
     return dataset
 
 
-@tf.function
-def inference_step(model, batch, reconstruct=False):
-    with tf.GradientTape() as tape:
-        loss, kl, log_p_observations, reconstructed = model.inference_step(batch)
-    reconstructed_sequences = reconstructed.mode() if reconstruct else None
-    return tape.gradient(
-        loss, model.trainable_variables), loss, log_p_observations, kl, reconstructed_sequences
-
-
-@tf.function
-def reconstruct_sequence(model, batch):
-    beliefs, prior, posterior = model.observe_sequence(batch)
-    kl = tf.reduce_mean(tf.reduce_sum(tfd.kl_divergence(posterior, prior), 1))
-    features = tf.concat([beliefs['stochastic'],
-                          beliefs['deterministic']], -1)
-    reconstructed = model._observation_decoder(features)
-    log_p_observations = tf.reduce_mean(tf.reduce_sum(
-        reconstructed.log_prob(batch['observation'][:, 1:]), 1))
-    horizon = tf.cast(tf.shape(batch['observation'])[1], tf.float32) - 1.0
-    loss = -log_p_observations + model._kl_scale * tf.maximum(model._free_nats * horizon, kl)
-    return reconstructed.mode(), loss, {'stochastic': beliefs['stochastic'][:, -1],
-                                        'deterministic': beliefs['deterministic'][:, -1]}
-
-
-@tf.function
-def generate_sequence(model, initial_belief):
-    horizon = 50
-    actions = tf.zeros([tf.shape(initial_belief['stochastic'])[0], horizon, 1], tf.float32)
-    features = model.generate_sequence(initial_belief, horizon, actions=actions)
-    return model._observation_decoder(features).mode()
-
-
 def main():
     tf.random.set_seed(0)
     np.random.seed(0)
-    model = models.WorldModel('binary_image', (64, 64, 1), 30, 200, 400, 0)
-    optimizer = tf.keras.optimizers.Adam(
-        learning_rate=5e-5, clipnorm=100)
-    train_dataset = make_dataset('dataset', repeat=1, shuffle=0)
-    config = collections.namedtuple('Config', ['log_dir'])('results_5e_5')
+    config_dict = train_utils.define_config()
+    config_dict['observation_type'] = 'binary_image'
+    config_dict['posterior_samples'] = 1
+    config_dict['log_dir'] = 'results'
+    config = train_utils.make_config(config_dict)
     logger = utils.TrainingLogger(config)
+    model = models.EnsembleWorldModel(config, logger, (64, 64, 1))
+    train_dataset = make_dataset('dataset', repeat=1, shuffle=0)
     for i, batch in enumerate(train_dataset):
         reconstruct = (i % 100) == 0
-        grads, loss, log_p_obs, total_kl, reconstructed_sequence = inference_step(
-            model, batch, reconstruct)
-        logger['loss'].update_state(loss)
-        logger['log_probs'].update_state(log_p_obs)
-        logger['kl'].update_state(total_kl)
-        optimizer.apply_gradients(zip(grads, model.trainable_variables))
+        posterior_beliefs = model.train(batch, reconstruct)
         if (i % 50) == 0:
             logger.log_metrics(i)
-        if reconstruct:
-            logger.log_video(tf.transpose(reconstructed_sequence[:3], [0, 1, 4, 2, 3]).numpy(), i,
-                             "reconstructed_sequence")
-            logger.log_video(tf.transpose(batch['observation'][:3], [0, 1, 4, 2, 3]).numpy(), i,
-                             "true_sequence")
+    global_step = i
+    last_belief = {'stochastic': posterior_beliefs['stochastic'][:, -1],
+                   'deterministic': posterior_beliefs['deterministic'][:, -1]}
+    horizon = 50
     test_dataset = make_dataset('dataset', 'test')
     for i, batch in enumerate(test_dataset):
-        reconstructed_sequence, elbo, last_belief = reconstruct_sequence(model, batch)
-        logger['test_elbo'].update_state(elbo)
+        actions = tf.zeros([tf.shape(batch['action'])[0], horizon, 1])
+        posterior_reconstructed_sequence = model.reconstruct_sequences_posterior(batch)
         if (i % 50) == 0:
-            print("Test ELBO: {}".format(logger['test_elbo'].result()))
-            logger.log_video(tf.transpose(reconstructed_sequence[:3], [0, 1, 4, 2, 3]).numpy(), i,
+            logger.log_video(tf.transpose(
+                posterior_reconstructed_sequence[:3], [0, 1, 4, 2, 3]).numpy(), i + global_step,
                              "test_reconstructed_sequence")
-            logger.log_video(tf.transpose(batch['observation'][:3], [0, 1, 4, 2, 3]).numpy(), i,
+            logger.log_video(tf.transpose(
+                batch['observation'][:3], [0, 1, 4, 2, 3]).numpy(), i + global_step,
                              "test_true_sequence")
-            generated_sequence = generate_sequence(model, last_belief)
-            logger.log_video(tf.transpose(generated_sequence[:3], [0, 1, 4, 2, 3]).numpy(), i,
-                             "test_genereated_sequence")
+            generated_sequence = model.generate_sequences_posterior(
+                last_belief, 50, actions=actions)
+            logger.log_video(tf.transpose(generated_sequence[:3], [0, 1, 4, 2, 3]).numpy(),
+                             i + global_step, "test_genereated_sequence")
+            logger.log_metrics(global_step)
     print("Done!")
 
 
