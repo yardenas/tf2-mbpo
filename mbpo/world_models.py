@@ -19,7 +19,7 @@ class BayesianWorldModel(tf.Module):
             initial_belief, horizon, self._rng.make_seeds(), actor, actions, log_sequences)
         if log_sequences:
             reconstructed_sequences = tf.reduce_mean(reconstructed_sequences_posterior, 0)
-            self._logger.log_video(tf.transpose(reconstructed_sequences,
+            self._logger.log_video(tf.transpose(reconstructed_sequences[:4],
                                                 [0, 1, 4, 2, 3]).numpy(), step,
                                    name='generation_reconstructed_sequence')
         return {k: tf.reduce_mean(v, 0) for k, v in sequences_posterior.items()}
@@ -32,10 +32,10 @@ class BayesianWorldModel(tf.Module):
     def train(self, batch, log_sequences=False, step=None):
         train_posterior_beliefs, reconstructed_sequences = self._training_step(batch, log_sequences)
         if log_sequences:
-            self._logger.log_video(tf.transpose(reconstructed_sequences[:3],
+            self._logger.log_video(tf.transpose(reconstructed_sequences[:4],
                                                 [0, 1, 4, 2, 3]).numpy(), step,
                                    name='train_reconstructed_sequence')
-            self._logger.log_video(tf.transpose(batch['observation'][:3], [0, 1, 4, 2, 3]).numpy(),
+            self._logger.log_video(tf.transpose(batch['observation'][:4], [0, 1, 4, 2, 3]).numpy(),
                                    step, name='train_true_sequence')
         return train_posterior_beliefs
 

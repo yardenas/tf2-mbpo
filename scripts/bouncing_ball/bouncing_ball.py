@@ -77,12 +77,13 @@ def main():
     config_dict = train_utils.define_config()
     config_dict['observation_type'] = 'binary_image'
     config_dict['model_learning_rate'] = 5e-5
-    config_dict['posterior_samples'] = 1
+    config_dict['posterior_samples'] = 5
     config_dict['log_dir'] = 'results'
     config = train_utils.make_config(config_dict)
     logger = utils.TrainingLogger(config)
     model = EnsembleWorldModel(config, logger, (64, 64, 1))
-    train_dataset = make_dataset('dataset', repeat=1, shuffle=0)
+    train_dataset = make_dataset('dataset', repeat=1, shuffle=0,
+                                 batch_size=config.posterior_samples * 16)
     global_step = 0
     for i, batch in enumerate(train_dataset):
         reconstruct = (i % 100) == 0
@@ -99,10 +100,10 @@ def main():
                        'deterministic': beliefs['deterministic'][:, -1]}
         if (i % 50) == 0:
             logger.log_video(tf.transpose(
-                posterior_reconstructed_sequence[:3], [0, 1, 4, 2, 3]).numpy(), i + global_step,
+                posterior_reconstructed_sequence[:4], [0, 1, 4, 2, 3]).numpy(), i + global_step,
                              "test_reconstructed_sequence")
             logger.log_video(tf.transpose(
-                batch['observation'][:3], [0, 1, 4, 2, 3]).numpy(), i + global_step,
+                batch['observation'][:4], [0, 1, 4, 2, 3]).numpy(), i + global_step,
                              "test_true_sequence")
             model.generate_sequences_posterior(
                 last_belief, 50, actions=actions, log_sequences=True, step=i + global_step)
