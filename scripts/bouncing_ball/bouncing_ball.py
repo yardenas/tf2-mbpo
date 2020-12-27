@@ -82,7 +82,7 @@ def main():
     config = train_utils.make_config(config_dict)
     logger = utils.TrainingLogger(config)
     model = EnsembleWorldModel(config, logger, (64, 64, 1))
-    train_dataset = make_dataset('dataset', repeat=1, shuffle=0,
+    train_dataset = make_dataset('dataset', repeat=config.posterior_samples, shuffle=0,
                                  batch_size=config.posterior_samples * 16)
     global_step = 0
     for i, batch in enumerate(train_dataset):
