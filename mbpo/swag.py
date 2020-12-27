@@ -86,7 +86,10 @@ class SWAG(SWA):
         return average_var, average_squared_var, cov_mat_sqrt_var
 
     @tf.function
-    def sample_and_assign_average_vars(self, scale, var_list):
+    def sample_and_assign_average_vars(self, scale, var_list, override_start=False):
+        start_averaging = self._get_hyper("start_averaging", tf.dtypes.int64)
+        if self.iterations < start_averaging and not override_start:
+            return tf.no_op
         samples = self.sample(scale, var_list)
         assign_ops = []
         for sample, var in zip(samples, var_list):
