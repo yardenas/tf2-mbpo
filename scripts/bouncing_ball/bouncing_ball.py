@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 
-import mbpo.world_models as models
+from mbpo.ensemble_world_model import EnsembleWorldModel
 import mbpo.utils as utils
 import scripts.train as train_utils
 
@@ -76,11 +76,12 @@ def main():
     np.random.seed(0)
     config_dict = train_utils.define_config()
     config_dict['observation_type'] = 'binary_image'
+    config_dict['model_learning_rate'] = 5e-5
     config_dict['posterior_samples'] = 1
     config_dict['log_dir'] = 'results'
     config = train_utils.make_config(config_dict)
     logger = utils.TrainingLogger(config)
-    model = models.EnsembleWorldModel(config, logger, (64, 64, 1))
+    model = EnsembleWorldModel(config, logger, (64, 64, 1))
     train_dataset = make_dataset('dataset', repeat=1, shuffle=0)
     global_step = 0
     for i, batch in enumerate(train_dataset):
