@@ -47,6 +47,7 @@ class EnsembleWorldModel(world_models.BayesianWorldModel):
         return_reconstructed = None if not log_sequences else tf.stack(ensemble_reconstructed, 0)
         return {k: tf.stack(v, 0) for k, v in ensemble_rollouts.items()}, return_reconstructed
 
+    @tf.function
     def _reconstruct_sequences_posterior(self, batch):
         ensemble_reconstructed = []
         ensemble_beliefs = []

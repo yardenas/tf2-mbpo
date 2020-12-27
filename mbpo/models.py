@@ -150,7 +150,7 @@ class WorldModel(tf.Module):
         features = tf.concat([initial_belief['stochastic'], initial_belief['deterministic']], -1)
         belief = initial_belief
         seeds = tf.cast(self._rng.make_seeds(horizon), tf.int32)
-        for t in tf.range(horizon):
+        for t in range(horizon):
             action = actor(tf.stop_gradient(features)
                            ).sample() if actions is None else actions[:, t]
             decoded = self._observation_decoder(features[:, None, ...]).mode()

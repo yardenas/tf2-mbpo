@@ -32,7 +32,6 @@ class BayesianWorldModel(tf.Module):
     def train(self, batch, log_sequences=False, step=None):
         train_posterior_beliefs, reconstructed_sequences = self._training_step(batch, log_sequences)
         if log_sequences:
-            print("recosntrururururd ", type(reconstructed_sequences))
             self._logger.log_video(tf.transpose(reconstructed_sequences[:3],
                                                 [0, 1, 4, 2, 3]).numpy(), step,
                                    name='train_reconstructed_sequence')
