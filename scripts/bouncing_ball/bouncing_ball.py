@@ -86,7 +86,7 @@ def main():
     global_step = 0
     for i, batch in enumerate(train_dataset):
         reconstruct = (i % 100) == 0
-        model.train(batch, reconstruct)
+        model.train(batch, reconstruct, step=i)
         if (i % 50) == 0:
             logger.log_metrics(i)
         global_step = i
@@ -105,7 +105,7 @@ def main():
                 batch['observation'][:3], [0, 1, 4, 2, 3]).numpy(), i + global_step,
                              "test_true_sequence")
             model.generate_sequences_posterior(
-                last_belief, 50, actions=actions, log_sequences=True)
+                last_belief, 50, actions=actions, log_sequences=True, step=i + global_step)
             logger.log_metrics(global_step)
     print("Done!")
 

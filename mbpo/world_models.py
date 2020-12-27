@@ -14,13 +14,13 @@ class BayesianWorldModel(tf.Module):
         return tf.reduce_mean(current_beliefs, 0), tf.reduce_mean(current_embeddiengs, 0)
 
     def generate_sequences_posterior(self, initial_belief, horizon, actor=None, actions=None,
-                                     log_sequences=False):
+                                     log_sequences=False, step=None):
         sequences_posterior, reconstructed_sequences_posterior = self._generate_sequences_posterior(
             initial_belief, horizon, self._rng.make_seeds(), actor, actions, log_sequences)
         if log_sequences:
             reconstructed_sequences = tf.reduce_mean(reconstructed_sequences_posterior, 0)
             self._logger.log_video(tf.transpose(reconstructed_sequences,
-                                                [0, 1, 4, 2, 3]).numpy(),
+                                                [0, 1, 4, 2, 3]).numpy(), step,
                                    name='generation_reconstructed_sequence')
         return {k: tf.reduce_mean(v, 0) for k, v in sequences_posterior.items()}
 
@@ -29,15 +29,15 @@ class BayesianWorldModel(tf.Module):
         return tf.reduce_mean(reconstructed_sequences_posterior, 0), {k: tf.reduce_mean(
             v, 0) for k, v in beliefs.items()}
 
-    def train(self, batch, log_sequences=False):
+    def train(self, batch, log_sequences=False, step=None):
         train_posterior_beliefs, reconstructed_sequences = self._training_step(batch, log_sequences)
         if log_sequences:
             print("recosntrururururd ", type(reconstructed_sequences))
             self._logger.log_video(tf.transpose(reconstructed_sequences[:3],
-                                                [0, 1, 4, 2, 3]).numpy(),
+                                                [0, 1, 4, 2, 3]).numpy(), step,
                                    name='train_reconstructed_sequence')
             self._logger.log_video(tf.transpose(batch['observation'][:3], [0, 1, 4, 2, 3]).numpy(),
-                                   name='train_true_sequence')
+                                   step, name='train_true_sequence')
         return train_posterior_beliefs
 
     def _update_beliefs(self, prev_embeddings, prev_action, current_observation):
