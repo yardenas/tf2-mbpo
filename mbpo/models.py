@@ -34,17 +34,19 @@ class WorldModel(tf.Module):
 
     def __call__(self, prev_embeddings, prev_action, current_observation):
         if prev_embeddings is None and prev_action is None:
-            return self.reset(1), self._observation_encoder(current_observation[:, None, ...])
+            return self._observation_encoder(current_observation[:, None, ...])
         seeds = tf.cast(self._rng.make_seeds(), tf.int32)
         predict_seed, correct_seed = tfp.random.split_seed(seeds[:, 0], 2, "update_belief")
-        prior, belief = self._predict(prev_action, prev_embeddings,
-                                      self._current_belief, predict_seed)
+        cat = tf.concat([prev_embeddings, prev_action], -1)
+        d_t, _ = self._f(cat, self._current_belief['deterministic'])
+        prior, _ = self._predict(self._current_belief['stochastic'], d_t, predict_seed)
         current_embeddings = self._observation_encoder(current_observation[:, None, ...])
-        smoothed = self._smooth(belief['deterministic'][:, None, ...],
+        smoothed = self._smooth(d_t[:, None, ...],
                                 current_embeddings[:, None, ...])
-        _, z_t = self._correct(smoothed, self._current_belief['stochastic'],
+        _, z_t = self._correct(self._current_belief['stochastic'], tf.squeeze(smoothed, 1),
                                prior.mean(), correct_seed)
-        self._current_belief = {'stochastic': z_t, 'deterministic': belief['deterministic']}
+        self._current_belief = {'stochastic': z_t, 'deterministic': d_t}
+        return current_embeddings
 
     def _predict(self, prev_stochastic, current_deterministic, seed):
         d_t_z_t_1 = tf.concat([current_deterministic, prev_stochastic], -1)
