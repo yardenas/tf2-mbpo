@@ -59,7 +59,7 @@ class TrainingLogger(object):
     def __init__(self, config):
         self._writer = SummaryWriter(config.log_dir)
         self._metrics = defaultdict(tf.metrics.Mean)
-        # dump_string(pretty_print(config), config.log_dir + '/params.txt')
+        dump_string(pretty_print(config), config.log_dir + '/params.txt')
 
     def __getitem__(self, item):
         return self._metrics[item]
@@ -81,7 +81,7 @@ class TrainingLogger(object):
         self._writer.flush()
 
     # (N, T, C, H, W)
-    def log_video(self, images, step, name='Evaluation policy', fps=15):
+    def log_video(self, images, step=None, name='Evaluation policy', fps=15):
         self._writer.add_video(name, images, step, fps=fps)
         self._writer.flush()
 

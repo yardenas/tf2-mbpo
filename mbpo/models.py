@@ -33,10 +33,12 @@ class WorldModel(tf.Module):
         self._kl_scale = kl_scale
 
     def __call__(self, prev_embeddings, prev_action, current_observation):
+        if prev_embeddings is None and prev_action is None:
+            return self.reset(1), self._observation_encoder(current_observation[:, None, ...])
         seeds = tf.cast(self._rng.make_seeds(), tf.int32)
         predict_seed, correct_seed = tfp.random.split_seed(seeds[:, 0], 2, "update_belief")
-        prior, belief = self.predict(prev_action, prev_embeddings,
-                                     self._current_belief, predict_seed)
+        prior, belief = self._predict(prev_action, prev_embeddings,
+                                      self._current_belief, predict_seed)
         current_embeddings = self._observation_encoder(current_observation[:, None, ...])
         smoothed = self._smooth(belief['deterministic'][:, None, ...],
                                 current_embeddings[:, None, ...])
@@ -87,7 +89,7 @@ class WorldModel(tf.Module):
             self._current_belief = initial
         return initial
 
-    def observe_sequence(self, batch):
+    def _observe_sequence(self, batch):
         embeddings = self._observation_encoder(batch['observation'])
         prev_embeddings = embeddings[:, :-1]
         horizon = tf.shape(prev_embeddings)[1]
@@ -124,24 +126,31 @@ class WorldModel(tf.Module):
         return beliefs, prior, posterior
 
     def inference_step(self, batch):
-        beliefs, prior, posterior = self.observe_sequence(batch)
+        beliefs, prior, posterior = self._observe_sequence(batch)
         kl = tf.reduce_mean(tf.reduce_sum(tfd.kl_divergence(posterior, prior), 1))
         features = tf.concat([beliefs['stochastic'],
                               beliefs['deterministic']], -1)
         reconstructed = self._observation_decoder(features)
         log_p_observations = tf.reduce_mean(tf.reduce_sum(
             reconstructed.log_prob(batch['observation'][:, 1:]), 1))
+        log_p_rewards = tf.reduce_mean(tf.reduce_sum(
+            self._reward_decoder(features).log_prob(batch['reward']), 1))
+        log_p_terminals = tf.reduce_mean(tf.reduce_sum(
+            self._terminal_decoder(features).log_prob(batch['terminal']), 1))
         horizon = tf.cast(tf.shape(batch['observation'])[1], tf.float32) - 1.0
-        loss = -log_p_observations + self._kl_scale * tf.maximum(self._free_nats * horizon, kl)
-        return loss, kl, log_p_observations, reconstructed
+        loss = self._kl_scale * tf.maximum(
+            self._free_nats * horizon, kl) - log_p_observations - log_p_rewards - log_p_terminals
+        return loss, kl, log_p_observations, log_p_rewards, log_p_terminals, reconstructed, beliefs
 
-    def generate_sequence(self, initial_belief, horizon, actor=None, actions=None):
+    def generate_sequence(self, initial_belief, horizon, actor=None, actions=None,
+                          log_sequences=False):
         sequence_features = tf.TensorArray(tf.float32, horizon)
+        sequence_decoded = []
         features = tf.concat([initial_belief['stochastic'], initial_belief['deterministic']], -1)
         seeds = tf.cast(self._rng.make_seeds(horizon), tf.int32)
         d_t = initial_belief['deterministic']
         z_t = initial_belief['stochastic']
-        for t in tf.range(horizon):
+        for t in range(horizon):
             action = actor(tf.stop_gradient(features)
                            ).sample() if actions is None else actions[:, t]
             embeddings = tf.squeeze(self._observation_encoder(
@@ -152,6 +161,19 @@ class WorldModel(tf.Module):
             features = tf.concat([z_t, d_t], -1)
             sequence_features = sequence_features.write(t, features)
         return tf.transpose(sequence_features.stack(), [1, 0, 2])
+            decoded = self._observation_decoder(features[:, None, ...]).mode()
+            embeddings = tf.squeeze(self._observation_encoder(
+                decoded), 1)
+            _, belief = self._predict(action, belief, embeddings, seeds[:, t])
+            features = tf.concat([belief['stochastic'], belief['deterministic']], -1)
+            sequence_features = sequence_features.write(t, features)
+            if log_sequences:
+                sequence_decoded.append(tf.squeeze(decoded, 1))
+        stacked_features = tf.transpose(sequence_features.stack(), [1, 0, 2])
+        stacked_sequence = tf.stack(sequence_decoded, 1) if log_sequences else None
+        return stacked_features, self._reward_decoder(
+            stacked_features).mode(), self._terminal_decoder(
+            stacked_features).mean(), stacked_sequence
 
 
 class Actor(tf.Module):
