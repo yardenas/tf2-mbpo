@@ -1,3 +1,5 @@
+import numpy as np
+
 import tensorflow as tf
 from tensorflow_probability import distributions as tfd
 
@@ -67,15 +69,15 @@ class DenseDecoder(tf.Module):
         super(DenseDecoder, self).__init__()
         self._layers = tf.keras.Sequential(
             [tf.keras.layers.Dense(units, activation) for _ in range(layers)] +
-            [tf.keras.layers.Dense(len(shape))])
-        self._shape = shape
+            [tf.keras.layers.Dense(np.prod(shape))])
         self._dist = dist
+        self._shape = shape
 
     def __call__(self, inputs):
         x = self._layers(inputs)
-        x = tf.reshape(x, tf.shape(inputs)[:-1] + self._shape)
+        x = tf.reshape(x, tf.concat([tf.shape(inputs)[:-1], self._shape], 0))
         if self._dist == 'normal':
-            return tfd.Independent(tfd.MultivariateNormalDiag(x, 1.0), len(self._shape))
+            return tfd.Independent(tfd.Normal(x, 1.0), len(self._shape))
         elif self._dist == 'bernoulli':
             return tfd.Independent(tfd.Bernoulli(x, dtype=tf.float32), len(self._shape))
 

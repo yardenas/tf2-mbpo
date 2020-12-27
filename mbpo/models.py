@@ -143,22 +143,29 @@ class WorldModel(tf.Module):
             self._free_nats * horizon, kl) - log_p_observations - log_p_rewards - log_p_terminals
         return loss, kl, log_p_observations, log_p_rewards, log_p_terminals, reconstructed, beliefs
 
-    def generate_sequence(self, initial_belief, horizon, actor=None, actions=None):
+    def generate_sequence(self, initial_belief, horizon, actor=None, actions=None,
+                          log_sequences=False):
         sequence_features = tf.TensorArray(tf.float32, horizon)
+        sequence_decoded = []
         features = tf.concat([initial_belief['stochastic'], initial_belief['deterministic']], -1)
         belief = initial_belief
         seeds = tf.cast(self._rng.make_seeds(horizon), tf.int32)
         for t in tf.range(horizon):
             action = actor(tf.stop_gradient(features)
                            ).sample() if actions is None else actions[:, t]
+            decoded = self._observation_decoder(features[:, None, ...]).mode()
             embeddings = tf.squeeze(self._observation_encoder(
-                self._observation_decoder(features[:, None, ...]).mode()), 1)
+                decoded), 1)
             _, belief = self._predict(action, belief, embeddings, seeds[:, t])
             features = tf.concat([belief['stochastic'], belief['deterministic']], -1)
             sequence_features = sequence_features.write(t, features)
+            if log_sequences:
+                sequence_decoded.append(tf.squeeze(decoded, 1))
         stacked_features = tf.transpose(sequence_features.stack(), [1, 0, 2])
+        stacked_sequence = tf.stack(sequence_decoded, 1) if log_sequences else None
         return stacked_features, self._reward_decoder(
-            stacked_features).mode(), self._terminal_decoder(stacked_features).mean()
+            stacked_features).mode(), self._terminal_decoder(
+            stacked_features).mean(), stacked_sequence
 
 
 class Actor(tf.Module):
