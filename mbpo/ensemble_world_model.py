@@ -71,7 +71,6 @@ class EnsembleWorldModel(world_models.BayesianWorldModel):
                    range(len(bootstraped_batches['observation']))]
         ensemble_reconstructed = []
         ensemble_beliefs = []
-        parameters = []
         total_loss = 0.0
         for i, (model_batch, model) in enumerate(zip(batches, self._ensemble)):
             with tf.GradientTape() as model_tape:
@@ -81,13 +80,12 @@ class EnsembleWorldModel(world_models.BayesianWorldModel):
                 if log_sequences:
                     ensemble_reconstructed.append(reconstructed.mode())
                 ensemble_beliefs.append(beliefs)
-                parameters += model.trainable_variables
                 self._logger['observation_' + str(i) + '_log_p'].update_state(-log_p_observations)
                 self._logger['rewards_' + str(i) + '_log_p'].update_state(-log_p_reward)
                 self._logger['terminals_' + str(i) + '_log_p'].update_state(-log_p_terminals)
                 self._logger['kl_' + str(i)].update_state(kl)
-            grads = model_tape.gradient(loss, parameters)
-            self._optimizer.apply_gradients(zip(grads, parameters))
+            grads = model_tape.gradient(loss, model.trainable_variables)
+            self._optimizer.apply_gradients(zip(grads, model.trainable_variables))
         self._logger['world_model_total_loss'].update_state(total_loss)
         # self._logger['world_model_grads'].update_state(tf.linalg.global_norm(grads))
         return_reconstructed = None if not log_sequences else tf.concat(ensemble_reconstructed, 0)
