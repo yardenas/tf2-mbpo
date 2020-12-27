@@ -14,6 +14,9 @@ class LearningRateScheduler(tf.keras.optimizers.schedules.LearningRateSchedule):
         self._init_lr = init_lr
         self._swa_lr = swa_lr
 
+    def get_config(self):
+        pass
+
     def __call__(self, step):
         t = tf.cast(step, tf.float32) / self._warmup_steps
         lr_ratio = self._swa_lr / self._init_lr
