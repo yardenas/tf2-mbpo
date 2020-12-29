@@ -34,10 +34,10 @@ class SwagWorldModel(BayesianWorldModel):
         super(SwagWorldModel, self).__init__(config, logger)
         self._optimizer = SWAG(
             tf.optimizers.SGD(
-                LearningRateScheduler(0.01, 0.02, 900),
+                LearningRateScheduler(0.01, 0.02, 1),
                 momentum=0.9),
-            900,
-            50)
+            1,
+            1)
         self._model = models.WorldModel(
             config.observation_type,
             observation_shape,
@@ -47,7 +47,7 @@ class SwagWorldModel(BayesianWorldModel):
             config.seed)
         self._posterior_samples = config.posterior_samples
 
-    @tf.function
+    # @tf.function
     def _update_beliefs(self, prev_embeddings, prev_action, current_observation):
         beliefs = []
         embeddings = []
@@ -58,7 +58,7 @@ class SwagWorldModel(BayesianWorldModel):
             embeddings.append(embedding)
         return tf.stack(beliefs, 0), tf.stack(embeddings, 0)
 
-    @tf.function
+    # @tf.function
     def _generate_sequences_posterior(self, initial_belief, horizon, seed, actor,
                                       actions, log_sequences):
         ensemble_rollouts = {'features': [],
@@ -77,7 +77,7 @@ class SwagWorldModel(BayesianWorldModel):
         return_reconstructed = None if not log_sequences else tf.stack(ensemble_reconstructed, 0)
         return {k: tf.stack(v, 0) for k, v in ensemble_rollouts.items()}, return_reconstructed
 
-    @tf.function
+    # @tf.function
     def _reconstruct_sequences_posterior(self, batch):
         ensemble_reconstructed = []
         ensemble_beliefs = []
@@ -94,7 +94,7 @@ class SwagWorldModel(BayesianWorldModel):
         return tf.stack(ensemble_reconstructed, 0), {k: tf.stack(
             [belief[k] for belief in ensemble_beliefs], 0) for k in ensemble_beliefs[0].keys()}
 
-    @tf.function
+    # @tf.function
     def _training_step(self, batch, log_sequences):
         with tf.GradientTape() as model_tape:
             loss, kl, log_p_observations, log_p_reward, \
