@@ -22,10 +22,12 @@ class SWAG(SWA):
 
     def _create_slots(self, var_list):
         self._optimizer._create_slots(var_list=var_list)
+        max_num_models = self._get_hyper("max_num_models", tf.int32)
         for var in var_list:
             self.add_slot(var, "average")
             self.add_slot(var, "average_squared")
-            self.add_slot(var, "cov_mat_sqrt")
+            numel = tf.size(var)
+            self.add_slot(var, "cov_mat_sqrt", initializer=tf.zeros([max_num_models, numel]))
 
     def _resource_apply_dense(self, grad, var):
         train_op = self._optimizer._resource_apply_dense(grad, var)
@@ -51,7 +53,7 @@ class SWAG(SWA):
         return self.average_op(
             var, (average_var, averae_squared_var, cov_mat_sqrt_var))
 
-    @tf.function
+    # @tf.function
     def average_op(self, var, average_var):
         average_var, average_squared_var, cov_mat_sqrt_var = average_var
         average_period = self._get_hyper("average_period", tf.dtypes.int64)
@@ -73,22 +75,27 @@ class SWAG(SWA):
             den = (num_snapshots + 1.0)
             average_value = (average_var * num_snapshots + var) / den
             average_squared_value = (average_squared_var * num_snapshots + var ** 2) / den
-            diff = tf.reshape((var - average_value), [-1, 1])
-            cat = tf.concat([cov_mat_sqrt_var, tf.transpose(diff)], 0)
-            max_num_models = self._get_hyper("max_num_models", tf.int64)
-            if (num_snapshots + 1) > max_num_models:
-                cat = cat[1:, :]
+            cov_mat_sqrt_var_roll = tf.roll(cov_mat_sqrt_var, 1, 0)
+            cov_mat_sqrt_var_roll = tf.concat([tf.reshape((var - average_value), [1, -1]),
+                                               cov_mat_sqrt_var_roll], 0)
             return average_var.assign(
                 average_value, use_locking=self._use_locking), average_squared_var.assign(
                 average_squared_value,
                 use_locking=self._use_locking), cov_mat_sqrt_var.assign(
-                cat, use_locking=self._use_locking)
+                cov_mat_sqrt_var_roll[:-1], use_locking=self._use_locking)
         return average_var, average_squared_var, cov_mat_sqrt_var
 
-    @tf.function
+    # @tf.function
     def sample_and_assign_average_vars(self, scale, var_list, override_start=False):
         start_averaging = self._get_hyper("start_averaging", tf.dtypes.int64)
-        if self.iterations < start_averaging and not override_start:
+        average_period = self._get_hyper("average_period", tf.dtypes.int64)
+        num_snapshots = tf.math.maximum(
+            tf.cast(0, tf.int64),
+            tf.math.floordiv(self.iterations - start_averaging, average_period),
+        )
+        max_num_models = self._get_hyper("max_num_models", tf.int32)
+        if (self.iterations < start_averaging or num_snapshots < max_num_models) \
+                and not override_start:
             return tf.no_op
         samples = self.sample(scale, var_list)
         assign_ops = []
