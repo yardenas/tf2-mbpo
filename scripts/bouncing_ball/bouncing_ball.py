@@ -77,9 +77,9 @@ def main():
     np.random.seed(0)
     config_dict = train_utils.define_config()
     config_dict['observation_type'] = 'binary_image'
-    config_dict['model_learning_rate'] = 5e-4
+    config_dict['model_learning_rate'] = 1e-4
     config_dict['posterior_samples'] = 1
-    config_dict['log_dir'] = 'results_swag_sgd_5e-4'
+    config_dict['log_dir'] = 'results_swag_sgd_1e-4'
     config = train_utils.make_config(config_dict)
     logger = utils.TrainingLogger(config)
     model = SwagWorldModel(config, logger, (64, 64, 1))
