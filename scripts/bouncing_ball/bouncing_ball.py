@@ -80,10 +80,10 @@ def main():
     config_dict['model_learning_rate'] = 8e-5
     config_dict['grad_clip_norm'] = 100.0
     config_dict['posterior_samples'] = 5
-    config_dict['log_dir'] = 'results_swag_scale_1000_50_override_5'
+    config_dict['log_dir'] = 'results_ensemble'
     config = train_utils.make_config(config_dict)
     logger = utils.TrainingLogger(config)
-    model = SwagWorldModel(config, logger, (64, 64, 1))
+    model = EnsembleWorldModel(config, logger, (64, 64, 1))
     train_dataset = make_dataset('dataset', repeat=1, shuffle=0,
                                  batch_size=16)
     global_step = 0
