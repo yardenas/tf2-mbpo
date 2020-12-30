@@ -16,7 +16,7 @@ class EnsembleWorldModel(world_models.BayesianWorldModel):
             config.units,
             config.seed)
             for _ in range(config.posterior_samples)]
-        self._optimizer = tf.keras.optimizers.SGD(
+        self._optimizer = tf.keras.optimizers.Adam(
             learning_rate=self._config.model_learning_rate, clipnorm=self._config.grad_clip_norm)
 
     @tf.function
