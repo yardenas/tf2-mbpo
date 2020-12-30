@@ -8,18 +8,18 @@ from mbpo.world_models import BayesianWorldModel
 # https://github.com/wjmaddox/swa_gaussian/blob/b172d93278fdb92522c8fccb7c6bfdd6f710e4f0
 # /experiments/train/train.py#L183
 class LearningRateScheduler(tf.keras.optimizers.schedules.LearningRateSchedule):
-    def __init__(self, init_lr, swa_lr, warmup_steps):
+    def __init__(self, init_lr, terminal_lr, warmup_steps):
         super(LearningRateScheduler, self).__init__()
         self._warmup_steps = tf.cast(warmup_steps, tf.float32)
         self._init_lr = init_lr
-        self._swa_lr = swa_lr
+        self._terminal_lr = terminal_lr
 
     def get_config(self):
         pass
 
     def __call__(self, step):
         t = tf.cast(step, tf.float32) / self._warmup_steps
-        lr_ratio = self._swa_lr / self._init_lr
+        lr_ratio = self._terminal_lr / self._init_lr
         if t <= 0.5:
             factor = 1.0
         elif t <= 0.9:
@@ -34,10 +34,10 @@ class SwagWorldModel(BayesianWorldModel):
         super(SwagWorldModel, self).__init__(config, logger)
         self._optimizer = SWAG(
             tf.optimizers.SGD(
-                LearningRateScheduler(0.01, 0.02, 1),
+                5e-5,
                 momentum=0.9),
-            1,
-            1)
+            900,
+            10)
         self._model = models.WorldModel(
             config.observation_type,
             observation_shape,
@@ -47,7 +47,7 @@ class SwagWorldModel(BayesianWorldModel):
             config.seed)
         self._posterior_samples = config.posterior_samples
 
-    # @tf.function
+    @tf.function
     def _update_beliefs(self, prev_embeddings, prev_action, current_observation):
         beliefs = []
         embeddings = []
@@ -58,7 +58,7 @@ class SwagWorldModel(BayesianWorldModel):
             embeddings.append(embedding)
         return tf.stack(beliefs, 0), tf.stack(embeddings, 0)
 
-    # @tf.function
+    @tf.function
     def _generate_sequences_posterior(self, initial_belief, horizon, seed, actor,
                                       actions, log_sequences):
         ensemble_rollouts = {'features': [],
@@ -66,7 +66,7 @@ class SwagWorldModel(BayesianWorldModel):
                              'terminals': []}
         ensemble_reconstructed = []
         for _ in range(self._posterior_samples):
-            self._optimizer.sample_and_assign_average_vars(self._model.trainable_variables)
+            self._optimizer.sample_and_assign_average_vars(1.0, self._model.trainable_variables)
             features, rewards, terminals, reconstructed = self._model.generate_sequence(
                 initial_belief, horizon, actor=actor, actions=actions,
                 log_sequences=log_sequences)
@@ -77,12 +77,12 @@ class SwagWorldModel(BayesianWorldModel):
         return_reconstructed = None if not log_sequences else tf.stack(ensemble_reconstructed, 0)
         return {k: tf.stack(v, 0) for k, v in ensemble_rollouts.items()}, return_reconstructed
 
-    # @tf.function
+    @tf.function
     def _reconstruct_sequences_posterior(self, batch):
         ensemble_reconstructed = []
         ensemble_beliefs = []
-        for i, in range(self._posterior_samples):
-            self._optimizer.sample_and_assign_average_vars(self._model.trainable_variables)
+        for i in range(self._posterior_samples):
+            self._optimizer.sample_and_assign_average_vars(1.0, self._model.trainable_variables)
             loss, kl, log_p_observations, log_p_reward, \
             log_p_terminals, reconstructed, beliefs = self._model.inference_step(batch)
             self._logger['test_dynamics_' + str(i) + '_log_p'].update_state(-log_p_observations)
@@ -94,7 +94,7 @@ class SwagWorldModel(BayesianWorldModel):
         return tf.stack(ensemble_reconstructed, 0), {k: tf.stack(
             [belief[k] for belief in ensemble_beliefs], 0) for k in ensemble_beliefs[0].keys()}
 
-    # @tf.function
+    @tf.function
     def _training_step(self, batch, log_sequences):
         with tf.GradientTape() as model_tape:
             loss, kl, log_p_observations, log_p_reward, \
