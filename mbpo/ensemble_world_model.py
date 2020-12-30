@@ -87,7 +87,6 @@ class EnsembleWorldModel(world_models.BayesianWorldModel):
             grads = model_tape.gradient(loss, model.trainable_variables)
             self._optimizer.apply_gradients(zip(grads, model.trainable_variables))
         self._logger['world_model_total_loss'].update_state(total_loss)
-        # self._logger['world_model_grads'].update_state(tf.linalg.global_norm(grads))
         return_reconstructed = None if not log_sequences else tf.concat(ensemble_reconstructed, 0)
         return {k: tf.concat(
             [belief[k] for belief in ensemble_beliefs],
