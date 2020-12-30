@@ -93,8 +93,9 @@ class WorldModel(tf.Module):
         seeds = tf.cast(self._rng.make_seeds(horizon), tf.int32)
         actions = batch['action']
         for t in tf.range(horizon):
+            predict_seed, correct_seed = tfp.random.split_seed(seeds[:, t], 2, "observe")
             prior, belief = self._predict(actions[:, t], belief, prev_embeddings[:, t],
-                                          seed=seeds[:, t])
+                                          seed=predict_seed)
             predictions['deterministics'] = predictions['deterministics'].write(
                 t, belief['deterministic'])
             predictions['prior_mus'] = predictions['prior_mus'].write(t, prior.mean())
@@ -111,7 +112,7 @@ class WorldModel(tf.Module):
         z_t = self.reset(tf.shape(actions)[0], True)['stochastic']
         for t in tf.range(horizon):
             posterior, z_t = self._correct(
-                smoothed[:, t], z_t, stacked_predictions['prior_mus'][:, t], seeds[:, t])
+                smoothed[:, t], z_t, stacked_predictions['prior_mus'][:, t], correct_seed)
             inferred['stochastics'] = inferred['stochastics'].write(t, z_t)
             inferred['posterior_mus'] = inferred['posterior_mus'].write(
                 t, posterior.mean())
