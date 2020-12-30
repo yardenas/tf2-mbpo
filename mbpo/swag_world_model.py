@@ -61,26 +61,26 @@ class SwagWorldModel(BayesianWorldModel):
     @tf.function
     def _generate_sequences_posterior(self, initial_belief, horizon, seed, actor,
                                       actions, log_sequences):
-        ensemble_rollouts = {'features': [],
-                             'rewards': [],
-                             'terminals': []}
-        ensemble_reconstructed = []
+        samples_rollouts = {'features': [],
+                            'rewards': [],
+                            'terminals': []}
+        samples_reconstructed = []
         for _ in range(self._posterior_samples):
             self._optimizer.sample_and_assign(1.0, self._model.trainable_variables)
             features, rewards, terminals, reconstructed = self._model.generate_sequence(
                 initial_belief, horizon, actor=actor, actions=actions,
                 log_sequences=log_sequences)
-            ensemble_rollouts['features'].append(features)
-            ensemble_rollouts['rewards'].append(rewards)
-            ensemble_rollouts['terminals'].append(terminals)
-            ensemble_reconstructed.append(reconstructed)
-        return_reconstructed = None if not log_sequences else tf.stack(ensemble_reconstructed, 0)
-        return {k: tf.stack(v, 0) for k, v in ensemble_rollouts.items()}, return_reconstructed
+            samples_rollouts['features'].append(features)
+            samples_rollouts['rewards'].append(rewards)
+            samples_rollouts['terminals'].append(terminals)
+            samples_reconstructed.append(reconstructed)
+        return_reconstructed = None if not log_sequences else tf.stack(samples_reconstructed, 0)
+        return {k: tf.stack(v, 0) for k, v in samples_rollouts.items()}, return_reconstructed
 
     @tf.function
     def _reconstruct_sequences_posterior(self, batch):
-        ensemble_reconstructed = []
-        ensemble_beliefs = []
+        samples_reconstructed = []
+        samples_beliefs = []
         for i in range(self._posterior_samples):
             self._optimizer.sample_and_assign(1.0, self._model.trainable_variables)
             loss, kl, log_p_observations, log_p_reward, \
@@ -89,10 +89,11 @@ class SwagWorldModel(BayesianWorldModel):
             self._logger['test_rewards_' + str(i) + '_log_p'].update_state(-log_p_reward)
             self._logger['test_terminals_' + str(i) + '_log_p'].update_state(-log_p_terminals)
             self._logger['test_kl_' + str(i)].update_state(kl)
-            ensemble_reconstructed.append(reconstructed.mode())
-            ensemble_beliefs.append(beliefs)
-        return tf.stack(ensemble_reconstructed, 0), {k: tf.stack(
-            [belief[k] for belief in ensemble_beliefs], 0) for k in ensemble_beliefs[0].keys()}
+            self._logger['test_ELBO_' + str(i)].update_state(loss)
+            samples_reconstructed.append(reconstructed.mode())
+            samples_beliefs.append(beliefs)
+        return tf.stack(samples_reconstructed, 0), {k: tf.stack(
+            [belief[k] for belief in samples_beliefs], 0) for k in samples_beliefs[0].keys()}
 
     @tf.function
     def _training_step(self, batch, log_sequences):
