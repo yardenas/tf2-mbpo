@@ -1,6 +1,6 @@
 import os
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+os.environ['CUDA_VISIBLE_DEVICES'] = '3'
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -79,8 +79,8 @@ def main():
     config_dict['observation_type'] = 'binary_image'
     config_dict['model_learning_rate'] = 8e-5
     config_dict['grad_clip_norm'] = 100.0
-    config_dict['posterior_samples'] = 1
-    config_dict['log_dir'] = 'results_swag_adam_8e-5'
+    config_dict['posterior_samples'] = 5
+    config_dict['log_dir'] = 'results_swag_scale_1000_50_override_5'
     config = train_utils.make_config(config_dict)
     logger = utils.TrainingLogger(config)
     model = SwagWorldModel(config, logger, (64, 64, 1))
