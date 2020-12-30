@@ -50,12 +50,11 @@ class SWAG(SWA):
         average_var = self.get_slot(var, "average")
         averae_squared_var = self.get_slot(var, "average_squared")
         cov_mat_sqrt_var = self.get_slot(var, "cov_mat_sqrt")
-        return self.average_op(
-            var, (average_var, averae_squared_var, cov_mat_sqrt_var))
+        return self._average_op(
+            var, average_var, averae_squared_var, cov_mat_sqrt_var)
 
-    # @tf.function
-    def average_op(self, var, average_var):
-        average_var, average_squared_var, cov_mat_sqrt_var = average_var
+    @tf.function
+    def _average_op(self, var, average_var, average_squared_var, cov_mat_sqrt_var):
         average_period = self._get_hyper("average_period", tf.dtypes.int64)
         start_averaging = self._get_hyper("start_averaging", tf.dtypes.int64)
         # number of times snapshots of weights have been taken (using max to
@@ -77,15 +76,15 @@ class SWAG(SWA):
             average_squared_value = (average_squared_var * num_snapshots + var ** 2) / den
             cov_mat_sqrt_var_roll = tf.roll(cov_mat_sqrt_var, 1, 0)
             cov_mat_sqrt_var_roll = tf.concat([tf.reshape((var - average_value), [1, -1]),
-                                               cov_mat_sqrt_var_roll], 0)
+                                               cov_mat_sqrt_var_roll[1:]], 0)
             return average_var.assign(
                 average_value, use_locking=self._use_locking), average_squared_var.assign(
                 average_squared_value,
                 use_locking=self._use_locking), cov_mat_sqrt_var.assign(
-                cov_mat_sqrt_var_roll[:-1], use_locking=self._use_locking)
+                cov_mat_sqrt_var_roll, use_locking=self._use_locking)
         return average_var, average_squared_var, cov_mat_sqrt_var
 
-    # @tf.function
+    @tf.function
     def sample_and_assign_average_vars(self, scale, var_list, override_start=False):
         start_averaging = self._get_hyper("start_averaging", tf.dtypes.int64)
         average_period = self._get_hyper("average_period", tf.dtypes.int64)
@@ -93,44 +92,36 @@ class SWAG(SWA):
             tf.cast(0, tf.int64),
             tf.math.floordiv(self.iterations - start_averaging, average_period),
         )
-        max_num_models = self._get_hyper("max_num_models", tf.int32)
-        if (self.iterations < start_averaging or num_snapshots < max_num_models) \
-                and not override_start:
-            return tf.no_op
-        samples = self.sample(scale, var_list)
-        assign_ops = []
-        for sample, var in zip(samples, var_list):
-            try:
-                assign_ops.append(
-                    var.assign(
-                        sample, use_locking=self._use_locking))
-            except Exception as e:
-                warnings.warn("Unable to assign sample sto {} : {}".format(var, e))
-        return tf.group(assign_ops)
+        max_num_models = self._get_hyper("max_num_models", tf.int64)
+        if not ((self.iterations < start_averaging or num_snapshots < max_num_models)
+                and not override_start):
+            assign_ops = []
+            for var in var_list:
+                try:
+                    assign_ops.append(
+                        var.assign(
+                            self.sample(scale, var), use_locking=self._use_locking))
+                except Exception as e:
+                    warnings.warn("Unable to assign sample to {} : {}".format(var, e))
+            tf.group(assign_ops)
 
-    @tf.function
-    def sample(self, scale, var_list):
-        average_list = []
-        squared_average_list = []
-        cov_mat_sqrt_list = []
+    @tf.function(experimental_relax_shapes=True)
+    def sample(self, scale, var):
         max_num_models = self._get_hyper("max_num_models", tf.float32)
-        for var in var_list:
-            average_list.append(self.get_slot(var, "average"))
-            squared_average_list.append(self.get_slot(var, "average_squared"))
-            cov_mat_sqrt_list.append(self.get_slot(var, "cov_mat_sqrt"))
-        average = tf.reshape(tf.concat(average_list, 0), [-1, 1])
-        squared_average = tf.reshape(tf.concat(squared_average_list, 0), [-1, 1])
+        average = self.get_slot(var, "average")
+        squared_average = self.get_slot(var, "average_squared")
+        cov_mat_sqrt = self.get_slot(var, "cov_mat_sqrt")
         var_clamp = self._get_hyper("var_clamp", tf.float32)
-        variance = tf.clip_by_value(squared_average - average ** 2, var_clamp)
+        variance = tf.maximum(squared_average - average ** 2, var_clamp)
         var_sample = tf.math.sqrt(variance) * tf.random.normal(tf.shape(variance))
-        cov_mat_sqrt = tf.concat(cov_mat_sqrt_list, 1)
         cov_sample = tf.linalg.matmul(
-            tf.transpose(cov_mat_sqrt),
-            tf.random.normal(tf.shape(cov_mat_sqrt)[0])) / ((max_num_models - 1) ** 0.5)
-        rand_sample = var_sample + cov_sample
+            cov_mat_sqrt,
+            tf.random.normal([tf.shape(cov_mat_sqrt)[0], 1]),
+            transpose_a=True) / ((max_num_models - 1) ** 0.5)
+        rand_sample = var_sample + tf.reshape(cov_sample, tf.shape(var_sample))
         scale_sqrt = scale ** 0.5
-        sample = (average + scale_sqrt * rand_sample)[None, ...]
-        return unflatten_like(sample, average_list)
+        sample = (average + scale_sqrt * rand_sample)
+        return sample
 
 
 def unflatten_like(tensor, tensor_list):
