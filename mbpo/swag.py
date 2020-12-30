@@ -93,8 +93,8 @@ class SWAG(SWA):
             tf.math.floordiv(self.iterations - start_averaging, mean_period),
         )
         max_num_models = self._get_hyper("max_num_models", tf.int64)
-        if not ((self.iterations < start_averaging or num_snapshots < max_num_models)
-                and not override_start):
+        if ((self.iterations >= start_averaging and num_snapshots >= max_num_models)
+                or override_start):
             assign_ops = []
             for var in var_list:
                 try:

@@ -66,7 +66,7 @@ class SwagWorldModel(BayesianWorldModel):
                              'terminals': []}
         ensemble_reconstructed = []
         for _ in range(self._posterior_samples):
-            self._optimizer.sample_and_assign(1.0, self._model.trainable_variables, True)
+            self._optimizer.sample_and_assign(1.0, self._model.trainable_variables)
             features, rewards, terminals, reconstructed = self._model.generate_sequence(
                 initial_belief, horizon, actor=actor, actions=actions,
                 log_sequences=log_sequences)
@@ -82,7 +82,7 @@ class SwagWorldModel(BayesianWorldModel):
         ensemble_reconstructed = []
         ensemble_beliefs = []
         for i in range(self._posterior_samples):
-            self._optimizer.sample_and_assign(1.0, self._model.trainable_variables, True)
+            self._optimizer.sample_and_assign(1.0, self._model.trainable_variables)
             loss, kl, log_p_observations, log_p_reward, \
             log_p_terminals, reconstructed, beliefs = self._model.inference_step(batch)
             self._logger['test_dynamics_' + str(i) + '_log_p'].update_state(-log_p_observations)
