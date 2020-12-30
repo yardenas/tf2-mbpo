@@ -24,6 +24,7 @@ class SWAG(SWA):
         self._optimizer._create_slots(var_list=var_list)
         max_num_models = self._get_hyper("max_num_models", tf.int32)
         for var in var_list:
+            self.add_slot(var, "average")
             self.add_slot(var, "average_squared")
             numel = tf.size(var)
             self.add_slot(var, "cov_mat_sqrt", initializer=tf.zeros([max_num_models, numel]))
