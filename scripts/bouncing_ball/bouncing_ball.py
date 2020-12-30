@@ -83,7 +83,7 @@ def main():
     config_dict['log_dir'] = 'results_ensemble'
     config = train_utils.make_config(config_dict)
     logger = utils.TrainingLogger(config)
-    model = EnsembleWorldModel(config, logger, (64, 64, 1))
+    model = SwagWorldModel(config, logger, (64, 64, 1))
     train_dataset = make_dataset('dataset', repeat=1, shuffle=0,
                                  batch_size=16)
     global_step = 0
