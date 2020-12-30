@@ -78,7 +78,7 @@ def main():
     config_dict = train_utils.define_config()
     config_dict['observation_type'] = 'binary_image'
     config_dict['model_learning_rate'] = 5e-5
-    config_dict['posterior_samples'] = 5
+    config_dict['posterior_samples'] = 1
     config_dict['log_dir'] = 'results'
     config = train_utils.make_config(config_dict)
     logger = utils.TrainingLogger(config)
