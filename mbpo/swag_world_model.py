@@ -33,11 +33,9 @@ class SwagWorldModel(BayesianWorldModel):
     def __init__(self, config, logger, observation_shape):
         super(SwagWorldModel, self).__init__(config, logger)
         self._optimizer = SWAG(
-            tf.optimizers.SGD(
+            tf.optimizers.Adam(
                 config.model_learning_rate,
-                clipnorm=config.grad_clip_norm,
-                momentum=0.9,
-                nesterov=True),
+                clipnorm=config.grad_clip_norm),
             1000,
             5)
         self._model = models.WorldModel(
