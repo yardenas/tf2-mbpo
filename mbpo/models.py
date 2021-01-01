@@ -133,12 +133,11 @@ class WorldModel(tf.Module):
         features = tf.concat([beliefs['stochastic'],
                               beliefs['deterministic']], -1)
         reconstructed = self._observation_decoder(features)
-        log_p_observations = tf.reduce_mean(tf.reduce_sum(
-            reconstructed.log_prob(batch['observation'][:, 1:]), 1))
-        log_p_rewards = tf.reduce_mean(tf.reduce_sum(
-            self._reward_decoder(features).log_prob(batch['reward']), 1))
-        log_p_terminals = tf.reduce_mean(tf.reduce_sum(
-            self._terminal_decoder(features).log_prob(batch['terminal']), 1))
+        log_p_observations = tf.reduce_mean(reconstructed.log_prob(batch['observation'][:, 1:]))
+        log_p_rewards = tf.reduce_mean(
+            self._reward_decoder(features).log_prob(batch['reward']))
+        log_p_terminals = tf.reduce_mean(
+            self._terminal_decoder(features).log_prob(batch['terminal']))
         horizon = tf.cast(tf.shape(batch['observation'])[1], tf.float32) - 1.0
         loss = self._kl_scale * tf.maximum(
             self._free_nats * horizon, kl) - log_p_observations - log_p_rewards - log_p_terminals
