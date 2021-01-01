@@ -138,9 +138,8 @@ class WorldModel(tf.Module):
             self._reward_decoder(features).log_prob(batch['reward']))
         log_p_terminals = tf.reduce_mean(
             self._terminal_decoder(features).log_prob(batch['terminal']))
-        horizon = tf.cast(tf.shape(batch['observation'])[1], tf.float32) - 1.0
         loss = self._kl_scale * tf.maximum(
-            self._free_nats * horizon, kl) - log_p_observations - log_p_rewards - log_p_terminals
+            self._free_nats, kl) - log_p_observations - log_p_rewards - log_p_terminals
         return loss, kl, log_p_observations, log_p_rewards, log_p_terminals, reconstructed, beliefs
 
     def generate_sequence(self, initial_belief, horizon, actor=None, actions=None,
