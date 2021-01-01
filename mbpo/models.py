@@ -59,8 +59,6 @@ class WorldModel(tf.Module):
         # Name alias to keep naming convention of https://arxiv.org/pdf/1605.07571.pdf
         z_t_1 = prev_stochastic
         a_t = current_smoothed
-        # The posterior decoder predicts the residual mean from the prior, as suggested in
-        # https://arxiv.org/pdf/1605.07571.pdf (eq. 12)
         posterior_mu, posterior_stddev = tf.split(
             self._posterior_decoder(tf.concat([z_t_1, a_t], -1)), 2, -1)
         posterior_stddev = tf.math.softplus(posterior_stddev) + 0.1
