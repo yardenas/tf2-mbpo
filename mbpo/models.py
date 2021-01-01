@@ -39,12 +39,11 @@ class WorldModel(tf.Module):
         predict_seed, correct_seed = tfp.random.split_seed(seeds[:, 0], 2, "update_belief")
         cat = tf.concat([prev_embeddings, prev_action], -1)
         d_t, _ = self._f(cat, self._current_belief['deterministic'])
-        prior, _ = self._predict(self._current_belief['stochastic'], d_t, predict_seed)
         current_embeddings = self._observation_encoder(current_observation[:, None, ...])
         smoothed = self._smooth(d_t[:, None, ...],
                                 current_embeddings[:, None, ...])
-        _, z_t = self._correct(self._current_belief['stochastic'], tf.squeeze(smoothed, 1),
-                               prior.mean(), correct_seed)
+        _, z_t = self._correct(self._current_belief['stochastic'],
+                               tf.squeeze(smoothed, 1), correct_seed)
         self._current_belief = {'stochastic': z_t, 'deterministic': d_t}
         return current_embeddings
 
@@ -56,15 +55,14 @@ class WorldModel(tf.Module):
         z_t = prior.sample(seed=seed)
         return prior, z_t
 
-    def _correct(self, prev_stochastic, current_smoothed, prior_mu, seed=None):
+    def _correct(self, prev_stochastic, current_smoothed, seed=None):
         # Name alias to keep naming convention of https://arxiv.org/pdf/1605.07571.pdf
         z_t_1 = prev_stochastic
         a_t = current_smoothed
         # The posterior decoder predicts the residual mean from the prior, as suggested in
         # https://arxiv.org/pdf/1605.07571.pdf (eq. 12)
-        posterior_mu_residual, posterior_stddev = tf.split(
+        posterior_mu, posterior_stddev = tf.split(
             self._posterior_decoder(tf.concat([z_t_1, a_t], -1)), 2, -1)
-        posterior_mu = posterior_mu_residual
         posterior_stddev = tf.math.softplus(posterior_stddev) + 0.1
         posterior = tfd.MultivariateNormalDiag(posterior_mu, posterior_stddev)
         z_t = posterior.sample(seed=seed)
@@ -110,7 +108,7 @@ class WorldModel(tf.Module):
             predict_seed, correct_seed = tfp.random.split_seed(seeds[:, t], 2, "observe")
             prior, _ = self._predict(z_t, deterministics[:, t], predict_seed)
             posterior, z_t = self._correct(
-                z_t, smoothed[:, t], prior.mean(), correct_seed)
+                z_t, smoothed[:, t], correct_seed)
             inferred['stochastics'] = inferred['stochastics'].write(t, z_t)
             inferred['prior_mus'] = inferred['prior_mus'].write(t, prior.mean())
             inferred['prior_stddevs'] = inferred['prior_stddevs'].write(t, prior.stddev())
