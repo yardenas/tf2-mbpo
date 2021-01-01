@@ -64,7 +64,7 @@ class WorldModel(tf.Module):
         # https://arxiv.org/pdf/1605.07571.pdf (eq. 12)
         posterior_mu_residual, posterior_stddev = tf.split(
             self._posterior_decoder(tf.concat([z_t_1, a_t], -1)), 2, -1)
-        posterior_mu = posterior_mu_residual + tf.stop_gradient(prior_mu)
+        posterior_mu = posterior_mu_residual
         posterior_stddev = tf.math.softplus(posterior_stddev) + 0.1
         posterior = tfd.MultivariateNormalDiag(posterior_mu, posterior_stddev)
         z_t = posterior.sample(seed=seed)
