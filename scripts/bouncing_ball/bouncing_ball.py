@@ -80,6 +80,7 @@ def main():
     config_dict['model_learning_rate'] = 8e-5
     config_dict['grad_clip_norm'] = 100.0
     config_dict['posterior_samples'] = 5
+    config_dict['seed'] = 0
     config_dict['log_dir'] = 'results_ensemble'
     config = train_utils.make_config(config_dict)
     logger = utils.TrainingLogger(config)
