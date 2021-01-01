@@ -129,7 +129,7 @@ class WorldModel(tf.Module):
 
     def inference_step(self, batch):
         beliefs, prior, posterior = self._observe_sequence(batch)
-        kl = tf.reduce_mean(tf.reduce_sum(tfd.kl_divergence(posterior, prior), 1))
+        kl = tf.reduce_mean(tfd.kl_divergence(posterior, prior))
         features = tf.concat([beliefs['stochastic'],
                               beliefs['deterministic']], -1)
         reconstructed = self._observation_decoder(features)
