@@ -51,7 +51,7 @@ class WorldModel(tf.Module):
     def _predict(self, prev_stochastic, current_deterministic, seed):
         d_t_z_t_1 = tf.concat([current_deterministic, prev_stochastic], -1)
         prior_mu, prior_stddev = tf.split(self._prior_decoder(d_t_z_t_1), 2, -1)
-        prior_stddev = tf.math.softplus(prior_stddev) + 0.1
+        prior_stddev = tf.math.softplus(prior_stddev)
         prior = tfd.MultivariateNormalDiag(prior_mu, prior_stddev)
         z_t = prior.sample(seed=seed)
         return prior, z_t
@@ -64,8 +64,8 @@ class WorldModel(tf.Module):
         # https://arxiv.org/pdf/1605.07571.pdf (eq. 12)
         posterior_mu_residual, posterior_stddev = tf.split(
             self._posterior_decoder(tf.concat([z_t_1, a_t], -1)), 2, -1)
-        posterior_mu = posterior_mu_residual + tf.stop_gradient(prior_mu)
-        posterior_stddev = tf.math.softplus(posterior_stddev) + 0.1
+        posterior_mu = posterior_mu_residual
+        posterior_stddev = tf.math.softplus(posterior_stddev)
         posterior = tfd.MultivariateNormalDiag(posterior_mu, posterior_stddev)
         z_t = posterior.sample(seed=seed)
         return posterior, z_t
