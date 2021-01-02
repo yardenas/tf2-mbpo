@@ -36,7 +36,7 @@ class SwagWorldModel(BayesianWorldModel):
             tf.optimizers.Adam(
                 config.model_learning_rate,
                 clipnorm=config.grad_clip_norm),
-            1000,
+            5000,
             5)
         self._model = models.WorldModel(
             config.observation_type,
