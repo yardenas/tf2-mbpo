@@ -13,7 +13,6 @@ class WorldModel(tf.Module):
                  terminal_layers=1, activation=tf.nn.relu):
         super().__init__()
         self._f = tf.keras.layers.GRUCell(deterministic_size)
-        self._g = tf.keras.layers.GRU(deterministic_size, return_sequences=True, go_backwards=True)
         self._observation_encoder = blocks.encoder(observation_type, observation_shape,
                                                    observation_layers, units)
         self._observation_decoder = blocks.decoder(observation_type, observation_shape, 3, units)
@@ -33,52 +32,25 @@ class WorldModel(tf.Module):
         self._kl_scale = kl_scale
 
     def __call__(self, prev_embeddings, prev_action, current_observation):
-        if prev_embeddings is None and prev_action is None:
-            return self._observation_encoder(current_observation[:, None, ...])
-        seeds = tf.cast(self._rng.make_seeds(), tf.int32)
-        predict_seed, correct_seed = tfp.random.split_seed(seeds[:, 0], 2, "update_belief")
-        cat = tf.concat([prev_embeddings, prev_action], -1)
-        d_t, _ = self._f(cat, self._current_belief['deterministic'])
-        current_embeddings = self._observation_encoder(current_observation[:, None, ...])
-        smoothed = self._smooth(d_t[:, None, ...],
-                                current_embeddings[:, None, ...])
-        _, z_t = self._correct(self._current_belief['stochastic'],
-                               tf.squeeze(smoothed, 1), correct_seed)
-        self._current_belief = {'stochastic': z_t, 'deterministic': d_t}
-        return current_embeddings
+        pass
 
-    def _predict(self, prev_stochastic, current_deterministic, seed):
-        d_t_z_t_1 = tf.concat([current_deterministic, prev_stochastic], -1)
-        prior_mu, prior_stddev = tf.split(self._prior_decoder(d_t_z_t_1), 2, -1)
+    def _predict(self, prev_stochastic, prev_action, prev_deterministic, seed):
+        d_t_z_t_1 = tf.concat([prev_action, prev_stochastic], -1)
+        d_t, _ = self._f(d_t_z_t_1, prev_deterministic)
+        prior_mu, prior_stddev = tf.split(self._prior_decoder(d_t), 2, -1)
         prior_stddev = tf.math.softplus(prior_stddev)
         prior = tfd.MultivariateNormalDiag(prior_mu, prior_stddev)
         z_t = prior.sample(seed=seed)
-        return prior, z_t
+        return prior, z_t, d_t
 
-    def _correct(self, prev_stochastic, current_smoothed, seed=None):
-        # Name alias to keep naming convention of https://arxiv.org/pdf/1605.07571.pdf
-        z_t_1 = prev_stochastic
-        a_t = current_smoothed
+    def _correct(self, prev_deterministic, current_embeddings, seed=None):
+        # TODO (yarden): use also prev_stochastic here
         posterior_mu, posterior_stddev = tf.split(
-            self._posterior_decoder(tf.concat([z_t_1, a_t], -1)), 2, -1)
+            self._posterior_decoder(tf.concat([prev_deterministic, current_embeddings], -1)), 2, -1)
         posterior_stddev = tf.math.softplus(posterior_stddev)
         posterior = tfd.MultivariateNormalDiag(posterior_mu, posterior_stddev)
         z_t = posterior.sample(seed=seed)
         return posterior, z_t
-
-    def _propagate(self, embeddings, actions):
-        shape = tf.shape(embeddings)
-        d_t = self.reset(shape[0])['deterministic']
-        cat = tf.concat([embeddings, actions], -1)
-        deterministics = tf.TensorArray(tf.float32, shape[1])
-        for t in tf.range(shape[1]):
-            d_t, _ = self._f(cat[:, t], d_t)
-            deterministics = deterministics.write(t, d_t)
-        return tf.transpose(deterministics.stack(), [1, 0, 2])
-
-    def _smooth(self, deterministic_states, embeddings):
-        cat = tf.concat([deterministic_states, embeddings], -1)
-        return tf.reverse(self._g(cat), [1])
 
     def reset(self, batch_size, training=False):
         initial = {'stochastic': tf.zeros([batch_size, self._stochastic_size], tf.float32),
@@ -92,22 +64,24 @@ class WorldModel(tf.Module):
         prev_embeddings = embeddings[:, :-1]
         horizon = tf.shape(prev_embeddings)[1]
         actions = batch['action']
-        deterministics = self._propagate(prev_embeddings, actions)
         current_embeddings = embeddings[:, 1:]
-        smoothed = self._smooth(deterministics, current_embeddings)
         inferred = {'stochastics': tf.TensorArray(tf.float32, horizon),
+                    'deterministics': tf.TensorArray(tf.float32, horizon),
                     'prior_mus': tf.TensorArray(tf.float32, horizon),
                     'prior_stddevs': tf.TensorArray(tf.float32, horizon),
                     'posterior_mus': tf.TensorArray(tf.float32, horizon),
                     'posterior_stddevs': tf.TensorArray(tf.float32, horizon)}
         seeds = tf.cast(self._rng.make_seeds(horizon), tf.int32)
-        z_t = self.reset(tf.shape(actions)[0])['stochastic']
+        state = self.reset(tf.shape(actions)[0])
+        d_t = state['deterministic']
+        z_t = state['stochastic']
         for t in tf.range(horizon):
             predict_seed, correct_seed = tfp.random.split_seed(seeds[:, t], 2, "observe")
-            prior, _ = self._predict(z_t, deterministics[:, t], predict_seed)
+            prior, _, d_t = self._predict(z_t, actions[:, t], d_t, predict_seed)
             posterior, z_t = self._correct(
-                z_t, smoothed[:, t], correct_seed)
+                d_t, current_embeddings[:, t], correct_seed)
             inferred['stochastics'] = inferred['stochastics'].write(t, z_t)
+            inferred['deterministics'] = inferred['deterministics'].write(t, d_t)
             inferred['prior_mus'] = inferred['prior_mus'].write(t, prior.mean())
             inferred['prior_stddevs'] = inferred['prior_stddevs'].write(t, prior.stddev())
             inferred['posterior_mus'] = inferred['posterior_mus'].write(
@@ -116,7 +90,7 @@ class WorldModel(tf.Module):
                 t, posterior.stddev())
         stacked_inferred = {k: tf.transpose(v.stack(), [1, 0, 2]) for k, v in inferred.items()}
         beliefs = {'stochastic': stacked_inferred['stochastics'],
-                   'deterministic': deterministics}
+                   'deterministic': stacked_inferred['deterministics']}
         prior = tfd.MultivariateNormalDiag(stacked_inferred['prior_mus'],
                                            stacked_inferred['prior_stddevs'])
         posterior = tfd.MultivariateNormalDiag(stacked_inferred['posterior_mus'],
@@ -147,20 +121,15 @@ class WorldModel(tf.Module):
         d_t = initial_belief['deterministic']
         z_t = initial_belief['stochastic']
         for t in range(horizon):
-            action = actor(tf.stop_gradient(features)
-                           ).sample() if actions is None else actions[:, t]
-            decoded = self._observation_decoder(features[:, None, ...]).mode()
-            embeddings = tf.squeeze(self._observation_encoder(
-                decoded), 1)
-            if log_sequences:
-                sequence_decoded.append(tf.squeeze(decoded, 1))
-            cat = tf.concat([embeddings, action], -1)
-            d_t, _ = self._f(cat, d_t)
-            _, z_t = self._predict(z_t, d_t, seeds[:, t])
+            predict_seed, action_seed = tfp.random.split_seed(seeds[:, t], 2, "generate")
+            action = actor(tf.stop_gradient(features)).sample(
+                seed=action_seed) if actions is None else actions[:, t]
+            _, z_t, d_t = self._predict(z_t, action, d_t, predict_seed)
             features = tf.concat([z_t, d_t], -1)
             sequence_features = sequence_features.write(t, features)
         stacked_features = tf.transpose(sequence_features.stack(), [1, 0, 2])
-        stacked_sequence = tf.stack(sequence_decoded, 1) if log_sequences else None
+        stacked_sequence = self._observation_decoder(
+            stacked_features).mode() if log_sequences else None
         return stacked_features, self._reward_decoder(
             stacked_features).mode(), self._terminal_decoder(
             stacked_features).mean(), stacked_sequence
