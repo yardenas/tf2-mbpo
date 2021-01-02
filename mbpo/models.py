@@ -13,6 +13,7 @@ class WorldModel(tf.Module):
                  terminal_layers=1, activation=tf.nn.relu):
         super().__init__()
         self._f = tf.keras.layers.GRUCell(deterministic_size)
+        self._g = tf.keras.layers.GRU(deterministic_size, return_sequences=True, go_backwards=True)
         self._observation_encoder = blocks.encoder(observation_type, observation_shape,
                                                    observation_layers, units)
         self._observation_decoder = blocks.decoder(observation_type, observation_shape, 3, units)
@@ -33,6 +34,9 @@ class WorldModel(tf.Module):
 
     def __call__(self, prev_embeddings, prev_action, current_observation):
         pass
+
+    def _smooth(self, embeddings):
+        return tf.reverse(self._g(embeddings), [1])
 
     def _predict(self, prev_stochastic, prev_action, prev_deterministic, seed):
         d_t_z_t_1 = tf.concat([prev_action, prev_stochastic], -1)
@@ -60,17 +64,16 @@ class WorldModel(tf.Module):
         return initial
 
     def _observe_sequence(self, batch):
-        embeddings = self._observation_encoder(batch['observation'])
-        prev_embeddings = embeddings[:, :-1]
-        horizon = tf.shape(prev_embeddings)[1]
+        embeddings = self._observation_encoder(batch['observation'][:, 1:])
         actions = batch['action']
-        current_embeddings = embeddings[:, 1:]
+        horizon = tf.shape(embeddings)[1]
         inferred = {'stochastics': tf.TensorArray(tf.float32, horizon),
                     'deterministics': tf.TensorArray(tf.float32, horizon),
                     'prior_mus': tf.TensorArray(tf.float32, horizon),
                     'prior_stddevs': tf.TensorArray(tf.float32, horizon),
                     'posterior_mus': tf.TensorArray(tf.float32, horizon),
                     'posterior_stddevs': tf.TensorArray(tf.float32, horizon)}
+        smoothed = self._smooth(embeddings)
         seeds = tf.cast(self._rng.make_seeds(horizon), tf.int32)
         state = self.reset(tf.shape(actions)[0])
         d_t = state['deterministic']
@@ -79,7 +82,7 @@ class WorldModel(tf.Module):
             predict_seed, correct_seed = tfp.random.split_seed(seeds[:, t], 2, "observe")
             prior, _, d_t = self._predict(z_t, actions[:, t], d_t, predict_seed)
             posterior, z_t = self._correct(
-                d_t, current_embeddings[:, t], correct_seed)
+                d_t, smoothed[:, t], correct_seed)
             inferred['stochastics'] = inferred['stochastics'].write(t, z_t)
             inferred['deterministics'] = inferred['deterministics'].write(t, d_t)
             inferred['prior_mus'] = inferred['prior_mus'].write(t, prior.mean())
@@ -115,7 +118,6 @@ class WorldModel(tf.Module):
     def generate_sequence(self, initial_belief, horizon, actor=None, actions=None,
                           log_sequences=False):
         sequence_features = tf.TensorArray(tf.float32, horizon)
-        sequence_decoded = []
         features = tf.concat([initial_belief['stochastic'], initial_belief['deterministic']], -1)
         seeds = tf.cast(self._rng.make_seeds(horizon), tf.int32)
         d_t = initial_belief['deterministic']
