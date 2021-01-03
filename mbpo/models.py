@@ -32,13 +32,19 @@ class WorldModel(tf.Module):
         self._free_nats = float(free_nats)
         self._kl_scale = kl_scale
 
-    def __call__(self, prev_embeddings, prev_action, current_observation):
-        pass
+    def __call__(self, prev_action, current_observation):
+        _, _, d_t = self._predict(self._current_belief['stochastic'],
+                                  self._current_belief['deterministic'], prev_action)
+        embeddings = self._observation_encoder(current_observation)
+        smoothed = self._smooth(embeddings[:, None, ...])
+        _, z_t = self._correct(d_t, smoothed)
+        self._current_belief['stochastic'] = z_t
+        self._current_belief['deterministic'] = d_t
 
     def _smooth(self, embeddings):
         return tf.reverse(self._g(embeddings), [1])
 
-    def _predict(self, prev_stochastic, prev_action, prev_deterministic, seed):
+    def _predict(self, prev_stochastic, prev_deterministic, prev_action, seed=None):
         d_t_z_t_1 = tf.concat([prev_action, prev_stochastic], -1)
         d_t, _ = self._f(d_t_z_t_1, prev_deterministic)
         prior_mu, prior_stddev = tf.split(self._prior_decoder(d_t), 2, -1)
@@ -47,10 +53,10 @@ class WorldModel(tf.Module):
         z_t = prior.sample(seed=seed)
         return prior, z_t, d_t
 
-    def _correct(self, prev_deterministic, current_embeddings, seed=None):
+    def _correct(self, prev_deterministic, smoothed, seed=None):
         # TODO (yarden): use also prev_stochastic here
         posterior_mu, posterior_stddev = tf.split(
-            self._posterior_decoder(tf.concat([prev_deterministic, current_embeddings], -1)), 2, -1)
+            self._posterior_decoder(tf.concat([prev_deterministic, smoothed], -1)), 2, -1)
         posterior_stddev = tf.math.softplus(posterior_stddev)
         posterior = tfd.MultivariateNormalDiag(posterior_mu, posterior_stddev)
         z_t = posterior.sample(seed=seed)
@@ -80,7 +86,7 @@ class WorldModel(tf.Module):
         z_t = state['stochastic']
         for t in tf.range(horizon):
             predict_seed, correct_seed = tfp.random.split_seed(seeds[:, t], 2, "observe")
-            prior, _, d_t = self._predict(z_t, actions[:, t], d_t, predict_seed)
+            prior, _, d_t = self._predict(z_t, d_t, actions[:, t], predict_seed)
             posterior, z_t = self._correct(
                 d_t, smoothed[:, t], correct_seed)
             inferred['stochastics'] = inferred['stochastics'].write(t, z_t)
@@ -126,7 +132,7 @@ class WorldModel(tf.Module):
             predict_seed, action_seed = tfp.random.split_seed(seeds[:, t], 2, "generate")
             action = actor(tf.stop_gradient(features)).sample(
                 seed=action_seed) if actions is None else actions[:, t]
-            _, z_t, d_t = self._predict(z_t, action, d_t, predict_seed)
+            _, z_t, d_t = self._predict(z_t, d_t, action, predict_seed)
             features = tf.concat([z_t, d_t], -1)
             sequence_features = sequence_features.write(t, features)
         stacked_features = tf.transpose(sequence_features.stack(), [1, 0, 2])
