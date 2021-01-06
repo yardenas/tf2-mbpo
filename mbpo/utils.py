@@ -73,7 +73,7 @@ class TrainingLogger(object):
         self._writer.flush()
 
     def log_metrics(self, step):
-        print("Training step {} summary:".format(step))
+        print("\n----Training step {} summary----".format(step))
         for k, v in self._metrics.items():
             print("{:<40} {:<.2f}".format(k, float(v.result())))
             self._writer.add_scalar(k, float(v.result()), step)
