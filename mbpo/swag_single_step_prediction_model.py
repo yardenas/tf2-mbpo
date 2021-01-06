@@ -75,16 +75,19 @@ class SwagSingleStepPredictionModel(world_models.BayesianWorldModel):
     def _update_beliefs(self, prev_embeddings, prev_action, current_observation):
         pass
 
+    @tf.function
     def _generate_sequences_posterior(self, initial_belief, horizon,
                                       seed, actor, actions, log_sequences):
         samples_reconstructed = []
         for _ in range(self._posterior_samples):
             self._optimizer.sample_and_assign(1.0, self.trainable_variables)
-            sequence = self._unroll_sequence(initial_belief['deterministic'], horizon, actor=actor, actions=actions)
+            sequence = self._unroll_sequence(initial_belief['deterministic'], horizon, actor=actor,
+                                             actions=actions)
             samples_reconstructed.append(sequence)
         stacked_all = tf.stack(samples_reconstructed, 0)
         return {'stochastic': stacked_all, 'deterministic': stacked_all}, stacked_all
 
+    @tf.function
     def _reconstruct_sequences_posterior(self, batch):
         samples_reconstructed = []
         next_observations = batch['observation'][:, 1:]
@@ -101,9 +104,10 @@ class SwagSingleStepPredictionModel(world_models.BayesianWorldModel):
         stacked_all = tf.stack(samples_reconstructed, 0)
         return stacked_all, {'stochastic': stacked_all, 'deterministic': stacked_all}
 
+    @tf.function
     def _unroll_sequence(self, initial_observation, horizon, next_observations=None, actor=None,
                          actions=None):
-        sequence_decoded = []
+        sequence_decoded = tf.TensorArray(tf.float32, horizon)
         observation = initial_observation
         seeds = tf.cast(self._rng.make_seeds(horizon), tf.int32)
         for t in range(horizon):
@@ -114,10 +118,11 @@ class SwagSingleStepPredictionModel(world_models.BayesianWorldModel):
             prediction = observation_dist.mode()
             observation = prediction if \
                 next_observations is None else next_observations[:, t]
-            sequence_decoded.append(prediction)
-        stacked_sequence = tf.stack(sequence_decoded, 1)
+            sequence_decoded = sequence_decoded.write(t, prediction)
+        stacked_sequence = tf.transpose(sequence_decoded.stack(), [1, 0, 2, 3, 4])
         return stacked_sequence
 
+    @tf.function
     def _training_step(self, batch, log_sequences):
         # We should actually shuffle the data to ensure that it is i.i.d but...(?)
         observations = tf.reshape(batch['observation'][:, :-1], (-1,) + self._shape)

@@ -92,7 +92,7 @@ def main():
     config_dict['log_dir'] = 'results_ensemble'
     config = train_utils.make_config(config_dict)
     logger = utils.TrainingLogger(config)
-    model = SwagSingleStepPredictionModel(config, logger, (64, 64, 1), )
+    model = SwagSingleStepPredictionModel(config, logger, (64, 64, 1))
     train_dataset = make_dataset('dataset', repeat=2, shuffle=5000,
                                  batch_size=16)
     global_step = 0
