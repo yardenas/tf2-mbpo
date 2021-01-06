@@ -8,6 +8,7 @@ import tensorflow as tf
 
 from mbpo.ensemble_world_model import EnsembleWorldModel
 from mbpo.swag_world_model import SwagWorldModel
+from mbpo.swag_single_step_prediction_model import SwagSingleStepPredictionModel
 import mbpo.utils as utils
 import scripts.train as train_utils
 
@@ -91,7 +92,7 @@ def main():
     config_dict['log_dir'] = 'results_ensemble'
     config = train_utils.make_config(config_dict)
     logger = utils.TrainingLogger(config)
-    model = SwagWorldModel(config, logger, (64, 64, 1))
+    model = SwagSingleStepPredictionModel(config, logger, (64, 64, 1), )
     train_dataset = make_dataset('dataset', repeat=2, shuffle=5000,
                                  batch_size=16)
     global_step = 0
@@ -101,6 +102,8 @@ def main():
         if (i % 50) == 0:
             logger.log_metrics(i)
         global_step = i
+        if i == 1:
+            break
     horizon = 50
     test_dataset = make_dataset('dataset', 'test')
     for i, batch in enumerate(test_dataset):
