@@ -20,17 +20,15 @@ class EnsembleWorldModel(world_models.BayesianWorldModel):
             learning_rate=self._config.model_learning_rate, clipnorm=self._config.grad_clip_norm)
 
     @tf.function
-    def _update_beliefs(self, prev_embeddings, prev_action, current_observation):
+    def _update_beliefs(self, prev_action, current_observation):
         beliefs = []
-        embeddings = []
         for model in self._ensemble:
-            belief, embedding = model(prev_embeddings, prev_action, current_observation)
+            belief = model(prev_action, current_observation)
             beliefs.append(belief)
-            embeddings.append(embedding)
-        return tf.stack(beliefs, 0), tf.stack(embeddings, 0)
+        return tf.stack(beliefs, 0)
 
     @tf.function
-    def _generate_sequences_posterior(self, initial_belief, horizon, seed, actor,
+    def _generate_sequences_posterior(self, initial_belief, horizon, actor,
                                       actions, log_sequences):
         ensemble_rollouts = {'features': [],
                              'rewards': [],

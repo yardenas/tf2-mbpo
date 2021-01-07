@@ -2,6 +2,7 @@ import warnings
 
 import tensorflow as tf
 from tensorflow_addons.optimizers import SWA
+import tensorflow_probability as tfp
 
 
 class SWAG(SWA):
@@ -85,7 +86,7 @@ class SWAG(SWA):
         return mean_var, mean_squared_var, cov_mat_sqrt_var
 
     @tf.function
-    def sample_and_assign(self, scale, var_list, override_start=False):
+    def sample_and_assign(self, scale, var_list, override_start=False, seed=None):
         start_averaging = self._get_hyper("start_averaging", tf.dtypes.int64)
         mean_period = self._get_hyper("average_period", tf.dtypes.int64)
         num_snapshots = tf.math.maximum(
@@ -100,23 +101,24 @@ class SWAG(SWA):
                 try:
                     assign_ops.append(
                         var.assign(
-                            self.sample(scale, var), use_locking=self._use_locking))
+                            self.sample(scale, var, seed), use_locking=self._use_locking))
                 except Exception as e:
                     warnings.warn("Unable to assign sample to {} : {}".format(var, e))
             tf.group(assign_ops)
 
     @tf.function(experimental_relax_shapes=True)
-    def sample(self, scale, var):
+    def sample(self, scale, var, seed):
+        var_seed, cov_seed = tfp.random.split_seed(seed, 2, "observe")
         max_num_models = self._get_hyper("max_num_models", tf.float32)
         mean = self.get_slot(var, "mean")
         squared_mean = self.get_slot(var, "mean_squared")
         cov_mat_sqrt = self.get_slot(var, "cov_mat_sqrt")
         var_clamp = self._get_hyper("var_clamp", tf.float32)
         variance = tf.maximum(squared_mean - mean ** 2, var_clamp)
-        var_sample = tf.math.sqrt(variance) * tf.random.normal(tf.shape(variance))
+        var_sample = tf.math.sqrt(variance) * tf.random.normal(tf.shape(variance), seed=var_seed)
         cov_sample = tf.linalg.matmul(
             cov_mat_sqrt,
-            tf.random.normal([tf.shape(cov_mat_sqrt)[0], 1]),
+            tf.random.normal([tf.shape(cov_mat_sqrt)[0], 1], seed=cov_seed),
             transpose_a=True) / ((max_num_models - 1) ** 0.5)
         rand_sample = var_sample + tf.reshape(cov_sample, tf.shape(var_sample))
         scale_sqrt = scale ** 0.5
