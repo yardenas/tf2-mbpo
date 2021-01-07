@@ -6,9 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 
-from mbpo.ensemble_world_model import EnsembleWorldModel
 from mbpo.swag_world_model import SwagWorldModel
-from mbpo.swag_single_step_prediction_model import SwagSingleStepPredictionModel
 import mbpo.utils as utils
 import scripts.train as train_utils
 
@@ -40,7 +38,39 @@ def load_data(data_dir, prefix='train', stack_observation=1):
                    'terminal': np.zeros([sequence_batch[i].shape[0] - 1, ], np.float32)}
 
 
-def show_sequence(sequence, figname=None):
+def compare_ground_truth_generated(ground_truth, reconstructed, generated,
+                                   reconstruct_skip=2, generate_skip=4):
+    warmup_length = reconstructed.shape[1]
+    generation_length = generated.shape[1]
+    assert ground_truth.shape[1] == warmup_length + generation_length
+    fig = plt.figure(figsize=(15, 4), constrained_layout=True)
+    spec = fig.add_gridspec(ncols=2, nrows=1, width_ratios=[reconstruct_skip, generate_skip],
+                            height_ratios=[1])
+    ax1 = fig.add_subplot(spec[0, 0])
+    input_ = np.stack([ground_truth[0, :warmup_length:reconstruct_skip],
+                       reconstructed[0, ::reconstruct_skip]], 0)
+    show_sequences(input_, ax1)
+    ax2 = fig.add_subplot(spec[0, 1], sharey=ax1)
+    generation = np.stack([ground_truth[0, warmup_length::generate_skip],
+                           generated[0, ::generate_skip]], 0)
+    show_sequences(generation, ax2)
+    plt.setp(ax2.get_yticklabels(), visible=False)
+    _, _, width, height, _ = ground_truth.shape
+    warmup_stamps = np.arange(1, warmup_length, reconstruct_skip)
+    ax1.set_yticks([height / 2, height * 3 / 2])
+    ax1.set_yticklabels(['True', 'Predicted'])
+    ax1.set_xticks(np.arange(1, len(warmup_stamps) * 2, 2) * width / 2)
+    ax1.set_xticklabels(warmup_stamps)
+    ax1.set_title('Warmup')
+    generation_stamps = np.arange(1, generation_length, generate_skip) + warmup_stamps[-1]
+    ax2.set_xticks(np.arange(1, len(generation_stamps) * 2, 2) * width / 2)
+    ax2.set_xticklabels(generation_stamps)
+    ax2.tick_params(axis='y', which='both', left=False, right=False)
+    ax2.set_title('Generation')
+    plt.show()
+
+
+def show_sequences(sequence, ax):
     plt.rcParams['figure.figsize'] = [15, 8]
     batch, length, width, height, depth = sequence.shape
     out = np.zeros((batch * height, length * width, depth))
@@ -52,9 +82,7 @@ def show_sequence(sequence, figname=None):
     out[:, 0::width, :] = 0.5
     out[1::height, :, :] = 0.5
     out[:, 1::width, :] = 0.5
-    plt.imshow(out, cmap=matplotlib.cm.Greys_r)
-    if figname is not None:
-        plt.savefig(figname)
+    ax.imshow(out, cmap=matplotlib.cm.Greys_r)
 
 
 def make_dataset(dir, prefix='train', repeat=0, shuffle=0, seed=0, batch_size=16,
@@ -102,13 +130,16 @@ def main():
         if (i % 50) == 0:
             logger.log_metrics(i)
         global_step = i
-    horizon = 50
+        if i == 0:
+            break
+    conditioning_length = 10
+    horizon = 40
     test_dataset = make_dataset('dataset', 'test')
     for i, batch in enumerate(test_dataset):
         actions = tf.zeros([tf.shape(batch['action'])[0], horizon, 1])
         posterior_reconstructed_sequence, beliefs = model.reconstruct_sequences_posterior(batch)
-        last_belief = {'stochastic': beliefs['stochastic'][:, -1],
-                       'deterministic': beliefs['deterministic'][:, -1]}
+        last_belief = {'stochastic': beliefs['stochastic'][:, conditioning_length],
+                       'deterministic': beliefs['deterministic'][:, conditioning_length]}
         if (i % 50) == 0:
             logger.log_video(tf.transpose(
                 posterior_reconstructed_sequence[:4], [0, 1, 4, 2, 3]).numpy(), i + global_step,
@@ -116,9 +147,13 @@ def main():
             logger.log_video(tf.transpose(
                 batch['observation'][:4], [0, 1, 4, 2, 3]).numpy(), i + global_step,
                              "test_true_sequence")
-            model.generate_sequences_posterior(
-                last_belief, 50, actions=actions, log_sequences=True, step=i + global_step)
+            _, reconstructed = model.generate_sequences_posterior(
+                last_belief, horizon, actions=actions, log_sequences=True, step=i + global_step)
             logger.log_metrics(global_step)
+            compare_ground_truth_generated(
+                batch['observation'],
+                posterior_reconstructed_sequence[:, :conditioning_length],
+                reconstructed)
     print("Done!")
 
 
