@@ -102,8 +102,6 @@ def main():
         if (i % 50) == 0:
             logger.log_metrics(i)
         global_step = i
-        if i == 1:
-            break
     horizon = 50
     test_dataset = make_dataset('dataset', 'test')
     for i, batch in enumerate(test_dataset):
