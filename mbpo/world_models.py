@@ -15,13 +15,15 @@ class BayesianWorldModel(tf.Module):
     def generate_sequences_posterior(self, initial_belief, horizon, actor=None, actions=None,
                                      log_sequences=False, step=None):
         sequences_posterior, reconstructed_sequences_posterior = self._generate_sequences_posterior(
-            initial_belief, horizon, actor, actions, log_sequences)
+            initial_belief, horizon, self._rng.make_seeds(), actor, actions, log_sequences)
+        reconstructed_sequences = None
         if log_sequences:
             reconstructed_sequences = tf.reduce_mean(reconstructed_sequences_posterior, 0)
             self._logger.log_video(tf.transpose(reconstructed_sequences[:4],
                                                 [0, 1, 4, 2, 3]).numpy(), step,
                                    name='generation_reconstructed_sequence')
-        return {k: tf.reduce_mean(v, 0) for k, v in sequences_posterior.items()}
+        return {k: tf.reduce_mean(
+            v, 0) for k, v in sequences_posterior.items()}, reconstructed_sequences
 
     def reconstruct_sequences_posterior(self, batch):
         reconstructed_sequences_posterior, beliefs = self._reconstruct_sequences_posterior(batch)
