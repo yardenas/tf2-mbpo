@@ -46,27 +46,30 @@ class SwagWorldModel(BayesianWorldModel):
             config.units,
             config.seed)
         self._posterior_samples = config.posterior_samples
+        self._rng = tf.random.Generator.from_seed(config.seed)
 
     @tf.function
-    def _update_beliefs(self, prev_embeddings, prev_action, current_observation):
+    def _update_beliefs(self, prev_action, current_observation):
         beliefs = []
-        embeddings = []
-        for _ in range(self._posterior_samples):
-            self._optimizer.sample_and_assign(0.0, self._model.trainable_variables)
-            belief, embedding = self._model(prev_embeddings, prev_action, current_observation)
+        seeds = tf.cast(self._rng.make_seeds(self._posterior_samples), tf.int32)
+        for i in range(self._posterior_samples):
+            self._optimizer.sample_and_assign(0.0, self._model.trainable_variables,
+                                              seed=seeds[:, i])
+            belief, embedding = self._model(prev_action, current_observation)
             beliefs.append(belief)
-            embeddings.append(embedding)
-        return tf.stack(beliefs, 0), tf.stack(embeddings, 0)
+        return tf.stack(beliefs, 0)
 
     @tf.function
-    def _generate_sequences_posterior(self, initial_belief, horizon, seed, actor,
+    def _generate_sequences_posterior(self, initial_belief, horizon, actor,
                                       actions, log_sequences):
         samples_rollouts = {'features': [],
                             'rewards': [],
                             'terminals': []}
         samples_reconstructed = []
-        for _ in range(self._posterior_samples):
-            self._optimizer.sample_and_assign(0.0, self._model.trainable_variables)
+        seeds = tf.cast(self._rng.make_seeds(self._posterior_samples), tf.int32)
+        for i in range(self._posterior_samples):
+            self._optimizer.sample_and_assign(0.0, self._model.trainable_variables,
+                                              seed=seeds[:, i])
             features, rewards, terminals, reconstructed = self._model.generate_sequence(
                 initial_belief, horizon, actor=actor, actions=actions,
                 log_sequences=log_sequences)
@@ -81,8 +84,10 @@ class SwagWorldModel(BayesianWorldModel):
     def _reconstruct_sequences_posterior(self, batch):
         samples_reconstructed = []
         samples_beliefs = []
+        seeds = tf.cast(self._rng.make_seeds(self._posterior_samples), tf.int32)
         for i in range(self._posterior_samples):
-            self._optimizer.sample_and_assign(0.0, self._model.trainable_variables)
+            self._optimizer.sample_and_assign(0.0, self._model.trainable_variables,
+                                              seed=seeds[:, i])
             loss, kl, log_p_observations, log_p_reward, \
             log_p_terminals, reconstructed, beliefs = self._model.inference_step(batch)
             self._logger['test_dynamics_' + str(i) + '_log_p'].update_state(-log_p_observations)
