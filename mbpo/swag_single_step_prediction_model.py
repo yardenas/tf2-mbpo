@@ -36,9 +36,6 @@ class SwagSingleStepPredictionModel(world_models.BayesianWorldModel):
             (), terminal_layers, config.units, tf.nn.relu, 'bernoulli')
         self._rng = tf.random.Generator.from_seed(config.seed)
 
-    def __call__(self, prev_embeddings, prev_action, current_observation):
-        pass
-
     def _encode(self, observation):
         x = self._encoder[0](observation)
         x = skip_1 = self._encoder[1](x)
@@ -62,7 +59,8 @@ class SwagSingleStepPredictionModel(world_models.BayesianWorldModel):
 
     def _forward(self, observation, action):
         encoded, skip_1, skip_2 = self._encode(observation)
-        decoded = self._decode(encoded, action, skip_1, skip_2)
+        decoded_res = self._decode(encoded, action, skip_1, skip_2)
+        decoded = decoded_res + tf.stop_gradient(observation)
         if self._type == 'rgb_image':
             dist = tfd.Independent(tfd.Normal(decoded, 1.0), len(self._shape))
         elif self._type == 'binary_image':
@@ -72,7 +70,7 @@ class SwagSingleStepPredictionModel(world_models.BayesianWorldModel):
         cat = tf.concat([encoded, action], -1)
         return dist, self._reward_decoder(cat), self._terminal_decoder(cat)
 
-    def _update_beliefs(self, prev_embeddings, prev_action, current_observation):
+    def _update_beliefs(self, prev_action, current_observation):
         pass
 
     @tf.function
