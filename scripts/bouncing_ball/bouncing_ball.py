@@ -68,7 +68,6 @@ def compare_ground_truth_generated(ground_truth, reconstructed, generated,
     ax2.set_xticklabels(generation_stamps)
     ax2.tick_params(axis='y', which='both', left=False, right=False)
     ax2.set_title('Generation')
-    plt.show()
 
 
 def show_sequences(sequence, ax):
