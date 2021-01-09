@@ -130,8 +130,6 @@ def main():
         if (i % 50) == 0:
             logger.log_metrics(i)
         global_step = i
-        if i == 0:
-            break
     conditioning_length = 10
     horizon = 40
     test_dataset = make_dataset('dataset', 'test')
