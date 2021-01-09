@@ -127,11 +127,12 @@ def main():
     config_dict['log_dir'] = 'results_ensemble'
     config_dict['n_step_loss'] = False
     config_dict['model_name'] = 'FeedForward'
+    config_dict['stack_observations'] = 1
     config = train_utils.make_config(config_dict)
     logger = utils.TrainingLogger(config)
-    model = choose_model(config.model_name)(config, logger, (64, 64, 1))
+    model = choose_model(config.model_name)(config, logger, (64, 64, config.stack_observations))
     train_dataset = make_dataset('dataset', repeat=2, shuffle=5000,
-                                 batch_size=16)
+                                 batch_size=16, stack_observations=config.stack_observations)
     global_step = 0
     for i, batch in enumerate(train_dataset):
         reconstruct = (i % 100) == 0
@@ -141,7 +142,7 @@ def main():
         global_step = i
     conditioning_length = 10
     horizon = 40
-    test_dataset = make_dataset('dataset', 'test')
+    test_dataset = make_dataset('dataset', 'test', stack_observations=config.stack_observations)
     for i, batch in enumerate(test_dataset):
         actions = tf.zeros([tf.shape(batch['action'])[0], horizon, 1])
         posterior_reconstructed_sequence, beliefs = model.reconstruct_sequences_posterior(batch)
