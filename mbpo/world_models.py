@@ -15,7 +15,7 @@ class BayesianWorldModel(tf.Module):
     def generate_sequences_posterior(self, initial_belief, horizon, actor=None, actions=None,
                                      log_sequences=False, step=None):
         sequences_posterior, reconstructed_sequences_posterior = self._generate_sequences_posterior(
-            initial_belief, horizon, self._rng.make_seeds(), actor, actions, log_sequences)
+            initial_belief, horizon, actor, actions, log_sequences)
         reconstructed_sequences = None
         if log_sequences:
             reconstructed_sequences = tf.reduce_mean(reconstructed_sequences_posterior, 0)

@@ -7,6 +7,7 @@ import numpy as np
 import tensorflow as tf
 
 from mbpo.swag_world_model import SwagWorldModel
+from mbpo.swag_feed_forward_model import SwagFeedForwardModel
 import mbpo.utils as utils
 import scripts.train as train_utils
 
@@ -67,7 +68,6 @@ def compare_ground_truth_generated(ground_truth, reconstructed, generated,
     ax2.set_xticklabels(generation_stamps)
     ax2.tick_params(axis='y', which='both', left=False, right=False)
     ax2.set_title('Generation')
-    plt.show()
 
 
 def show_sequences(sequence, ax):
@@ -83,6 +83,15 @@ def show_sequences(sequence, ax):
     out[1::height, :, :] = 0.5
     out[:, 1::width, :] = 0.5
     ax.imshow(out, cmap=matplotlib.cm.Greys_r)
+
+
+def choose_model(model_name):
+    if model_name == 'RSSM':
+        return SwagWorldModel
+    elif model_name == 'FeedForward':
+        return SwagFeedForwardModel
+    else:
+        raise RuntimeError('Wrong model name provided')
 
 
 def make_dataset(dir, prefix='train', repeat=0, shuffle=0, seed=0, batch_size=16,
@@ -113,14 +122,14 @@ def main():
     np.random.seed(0)
     config_dict = train_utils.define_config()
     config_dict['observation_type'] = 'binary_image'
-    config_dict['model_learning_rate'] = 5e-4
-    config_dict['grad_clip_norm'] = 100.0
-    config_dict['posterior_samples'] = 5
+    config_dict['model_learning_rate'] = 5e-5
     config_dict['seed'] = 0
     config_dict['log_dir'] = 'results_ensemble'
+    config_dict['n_step_loss'] = False
+    config_dict['model_name'] = 'FeedForward'
     config = train_utils.make_config(config_dict)
     logger = utils.TrainingLogger(config)
-    model = SwagWorldModel(config, logger, (64, 64, 1))
+    model = choose_model(config.model_name)(config, logger, (64, 64, 1))
     train_dataset = make_dataset('dataset', repeat=2, shuffle=5000,
                                  batch_size=16)
     global_step = 0
