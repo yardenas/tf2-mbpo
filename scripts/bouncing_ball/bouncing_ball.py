@@ -125,7 +125,7 @@ def main():
     config_dict['model_learning_rate'] = 5e-5
     config_dict['seed'] = 0
     config_dict['log_dir'] = 'results_ensemble'
-    config_dict['n_step_loss'] = True
+    config_dict['n_step_loss'] = False
     config_dict['model_name'] = 'FeedForward'
     config = train_utils.make_config(config_dict)
     logger = utils.TrainingLogger(config)
