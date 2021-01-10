@@ -21,6 +21,7 @@ def load_sequence(filename):
 
 
 def load_data(data_dir, prefix='train', stack_observation=1):
+    assert (50 % stack_observation) == 0, 'Should be divisable by 50.'
     data = []
     for filename in os.listdir(data_dir):
         file_path = os.path.join(data_dir, filename)
@@ -30,13 +31,37 @@ def load_data(data_dir, prefix='train', stack_observation=1):
         sequence_batch = load_sequence(file_path)
         for i in range(0, sequence_batch.shape[0], stack_observation):
             observation = np.array(
-                sequence_batch[i:i + stack_observation],
-                np.float32).transpose([-1, 1, 2, 3, 0]).squeeze(0) if stack_observation > 1 else \
+                sequence_batch,
+                np.float32).reshape(
+                [-1, 64, 64, stack_observation]) if stack_observation > 1 else \
                 np.array(sequence_batch[i], np.float32)[..., None]
             yield {'observation': observation,
                    'action': np.zeros([sequence_batch[i].shape[0] - 1, 1], np.float32),
                    'reward': np.zeros([sequence_batch[i].shape[0] - 1, ], np.float32),
                    'terminal': np.zeros([sequence_batch[i].shape[0] - 1, ], np.float32)}
+
+
+def make_dataset(dir, prefix='train', repeat=0, shuffle=0, seed=0, batch_size=16,
+                 stack_observations=1):
+    dataset = tf.data.Dataset.from_generator(lambda: load_data(dir, prefix, stack_observations),
+                                             output_types={'observation': np.float32,
+                                                           'action': np.float32,
+                                                           'reward': np.float32,
+                                                           'terminal': np.float32},
+                                             output_shapes={'observation': [50, 64, 64,
+                                                                            stack_observations],
+                                                            'action': [49, stack_observations],
+                                                            'reward': [49],
+                                                            'terminal': [49]})
+    dataset = dataset.map(lambda data: {k: tf.where(
+        utils.preprocess(v) > 0.0, 1.0, 0.0) for k, v in data.items()})
+    if shuffle:
+        dataset = dataset.shuffle(shuffle, seed, reshuffle_each_iteration=True)
+    if repeat:
+        dataset = dataset.repeat(repeat)
+    dataset = dataset.prefetch(1024)
+    dataset = dataset.batch(batch_size)
+    return dataset
 
 
 def compare_ground_truth_generated(ground_truth, reconstructed, generated,
@@ -92,29 +117,6 @@ def choose_model(model_name):
         return SwagFeedForwardModel
     else:
         raise RuntimeError('Wrong model name provided')
-
-
-def make_dataset(dir, prefix='train', repeat=0, shuffle=0, seed=0, batch_size=16,
-                 stack_observations=1):
-    dataset = tf.data.Dataset.from_generator(lambda: load_data(dir, prefix, stack_observations),
-                                             output_types={'observation': np.float32,
-                                                           'action': np.float32,
-                                                           'reward': np.float32,
-                                                           'terminal': np.float32},
-                                             output_shapes={'observation': [50, 64, 64,
-                                                                            stack_observations],
-                                                            'action': [49, stack_observations],
-                                                            'reward': [49],
-                                                            'terminal': [49]})
-    dataset = dataset.map(lambda data: {k: tf.where(
-        utils.preprocess(v) > 0.0, 1.0, 0.0) for k, v in data.items()})
-    if shuffle:
-        dataset = dataset.shuffle(shuffle, seed, reshuffle_each_iteration=True)
-    if repeat:
-        dataset = dataset.repeat(repeat)
-    dataset = dataset.prefetch(1024)
-    dataset = dataset.batch(batch_size)
-    return dataset
 
 
 def main():
