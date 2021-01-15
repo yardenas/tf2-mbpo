@@ -90,7 +90,12 @@ def train(config):
 def make_config(config):
     parser = argparse.ArgumentParser()
     for key, value in config.items():
-        parser.add_argument('--{}'.format(key), type=type(value) if value else str, default=value)
+        if type(value) == bool:
+            assert not value, "Default bool params should be set to false."
+            parser.add_argument('--{}'.format(key), action='store_true')
+        else:
+            parser.add_argument('--{}'.format(key),
+                                type=type(value) if value else str, default=value)
     return parser.parse_args()
 
 

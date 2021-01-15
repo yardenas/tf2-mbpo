@@ -5,10 +5,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 
-from mbpo.swag_world_model import SwagWorldModel
-from mbpo.swag_feed_forward_model import SwagFeedForwardModel
 import mbpo.utils as utils
 import scripts.train as train_utils
+from mbpo.swag_feed_forward_model import SwagFeedForwardModel
+from mbpo.swag_world_model import SwagWorldModel
 
 rng = tf.random.Generator.from_seed(0)
 
@@ -29,10 +29,10 @@ def load_data(data_dir, prefix='train', stack_observation=1):
         sequence_batch = load_sequence(file_path)
         for i in range(0, sequence_batch.shape[0], stack_observation):
             observation = np.array(
-                sequence_batch[i],
-                np.float32).reshape(
-                [-1, 64, 64, stack_observation]) if stack_observation > 1 else \
-                np.array(sequence_batch[i], np.float32)[..., None]
+                sequence_batch[i], np.float32).squeeze() \
+                .reshape([-1, stack_observation, 64, 64]) \
+                .transpose([0, 2, 3, 1]) if \
+                stack_observation > 1 else np.array(sequence_batch[i], np.float32)[..., None]
             yield {'observation': observation,
                    'action': np.zeros([observation.shape[0] - 1, 1], np.float32),
                    'reward': np.zeros([observation.shape[0] - 1, ], np.float32),
@@ -129,7 +129,7 @@ def main():
     config_dict['log_dir'] = 'results_ensemble'
     config_dict['n_step_loss'] = False
     config_dict['model_name'] = 'FeedForward'
-    config_dict['stack_observations'] = 1
+    config_dict['stack_observations'] = 2
     config = train_utils.make_config(config_dict)
     logger = utils.TrainingLogger(config)
     model = choose_model(config.model_name)(config, logger, (64, 64, config.stack_observations))
