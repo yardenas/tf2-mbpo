@@ -21,7 +21,6 @@ def load_sequence(filename):
 
 
 def load_data(data_dir, prefix='train', stack_observation=1):
-    assert (50 % stack_observation) == 0, 'Should be divisable by 50.'
     data = []
     for filename in os.listdir(data_dir):
         file_path = os.path.join(data_dir, filename)
@@ -31,28 +30,30 @@ def load_data(data_dir, prefix='train', stack_observation=1):
         sequence_batch = load_sequence(file_path)
         for i in range(0, sequence_batch.shape[0], stack_observation):
             observation = np.array(
-                sequence_batch,
+                sequence_batch[i],
                 np.float32).reshape(
                 [-1, 64, 64, stack_observation]) if stack_observation > 1 else \
                 np.array(sequence_batch[i], np.float32)[..., None]
             yield {'observation': observation,
-                   'action': np.zeros([sequence_batch[i].shape[0] - 1, 1], np.float32),
-                   'reward': np.zeros([sequence_batch[i].shape[0] - 1, ], np.float32),
-                   'terminal': np.zeros([sequence_batch[i].shape[0] - 1, ], np.float32)}
+                   'action': np.zeros([observation.shape[0] - 1, 1], np.float32),
+                   'reward': np.zeros([observation.shape[0] - 1, ], np.float32),
+                   'terminal': np.zeros([observation.shape[0] - 1, ], np.float32)}
 
 
 def make_dataset(dir, prefix='train', repeat=0, shuffle=0, seed=0, batch_size=16,
                  stack_observations=1):
+    assert (50 % stack_observations) == 0, 'Should be divisable by 50.'
+    horizon_length = 50 // stack_observations
     dataset = tf.data.Dataset.from_generator(lambda: load_data(dir, prefix, stack_observations),
                                              output_types={'observation': np.float32,
                                                            'action': np.float32,
                                                            'reward': np.float32,
                                                            'terminal': np.float32},
-                                             output_shapes={'observation': [50, 64, 64,
+                                             output_shapes={'observation': [horizon_length, 64, 64,
                                                                             stack_observations],
-                                                            'action': [49, stack_observations],
-                                                            'reward': [49],
-                                                            'terminal': [49]})
+                                                            'action': [horizon_length - 1, 1],
+                                                            'reward': [horizon_length - 1],
+                                                            'terminal': [horizon_length - 1]})
     dataset = dataset.map(lambda data: {k: tf.where(
         utils.preprocess(v) > 0.0, 1.0, 0.0) for k, v in data.items()})
     if shuffle:
@@ -65,7 +66,7 @@ def make_dataset(dir, prefix='train', repeat=0, shuffle=0, seed=0, batch_size=16
 
 
 def compare_ground_truth_generated(ground_truth, reconstructed, generated,
-                                   reconstruct_skip=2, generate_skip=4):
+                                   reconstruct_skip=2, generate_skip=4, name=''):
     warmup_length = reconstructed.shape[1]
     generation_length = generated.shape[1]
     assert ground_truth.shape[1] == warmup_length + generation_length
@@ -142,28 +143,29 @@ def main():
         if (i % 50) == 0:
             logger.log_metrics(i)
         global_step = i
-    conditioning_length = 10
-    horizon = 40
     test_dataset = make_dataset('dataset', 'test', stack_observations=config.stack_observations)
     for i, batch in enumerate(test_dataset):
+        sequence_length = tf.shape(batch['observation'])[1]
+        conditioning_length = sequence_length // 5
+        horizon = sequence_length - conditioning_length
         actions = tf.zeros([tf.shape(batch['action'])[0], horizon, 1])
         posterior_reconstructed_sequence, beliefs = model.reconstruct_sequences_posterior(batch)
         last_belief = {'stochastic': beliefs['stochastic'][:, conditioning_length],
                        'deterministic': beliefs['deterministic'][:, conditioning_length]}
         if (i % 50) == 0:
-            logger.log_video(tf.transpose(
-                posterior_reconstructed_sequence[:4], [0, 1, 4, 2, 3]).numpy(), i + global_step,
+            logger.log_video(utils.make_video(posterior_reconstructed_sequence[:4],
+                                              config.observation_type), i + global_step,
                              "test_reconstructed_sequence")
-            logger.log_video(tf.transpose(
-                batch['observation'][:4], [0, 1, 4, 2, 3]).numpy(), i + global_step,
-                             "test_true_sequence")
+            logger.log_video(utils.make_video(batch['observation'][:4], config.observation_type),
+                             i + global_step, "test_true_sequence")
             _, reconstructed = model.generate_sequences_posterior(
                 last_belief, horizon, actions=actions, log_sequences=True, step=i + global_step)
             logger.log_metrics(global_step)
             compare_ground_truth_generated(
-                batch['observation'],
-                posterior_reconstructed_sequence[:, :conditioning_length],
-                reconstructed)
+                utils.make_video(batch['observation'], config.observation_type, False),
+                utils.make_video(posterior_reconstructed_sequence[:, :conditioning_length],
+                                 config.observation_type, False),
+                utils.make_video(reconstructed, config.observation_type, False))
     print("Done!")
 
 

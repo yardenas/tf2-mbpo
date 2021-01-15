@@ -1,5 +1,7 @@
 import tensorflow as tf
 
+import mbpo.utils as utils
+
 
 class BayesianWorldModel(tf.Module):
     def __init__(self, config, logger):
@@ -7,7 +9,7 @@ class BayesianWorldModel(tf.Module):
         self._logger = logger
         self._config = config
 
-    def __call__(self,prev_action, current_observation):
+    def __call__(self, prev_action, current_observation):
         current_beliefs = self._update_beliefs(
             prev_action, current_observation)
         return tf.reduce_mean(current_beliefs, 0)
@@ -19,8 +21,8 @@ class BayesianWorldModel(tf.Module):
         reconstructed_sequences = None
         if log_sequences:
             reconstructed_sequences = tf.reduce_mean(reconstructed_sequences_posterior, 0)
-            self._logger.log_video(tf.transpose(reconstructed_sequences[:4],
-                                                [0, 1, 4, 2, 3]).numpy(), step,
+            self._logger.log_video(utils.make_video(reconstructed_sequences[:4],
+                                                    self._config.observation_type), step,
                                    name='generation_reconstructed_sequence')
         return {k: tf.reduce_mean(
             v, 0) for k, v in sequences_posterior.items()}, reconstructed_sequences
@@ -33,10 +35,11 @@ class BayesianWorldModel(tf.Module):
     def train(self, batch, log_sequences=False, step=None):
         train_posterior_beliefs, reconstructed_sequences = self._training_step(batch, log_sequences)
         if log_sequences:
-            self._logger.log_video(tf.transpose(reconstructed_sequences[:4],
-                                                [0, 1, 4, 2, 3]).numpy(), step,
+            self._logger.log_video(utils.make_video(reconstructed_sequences[:4],
+                                                    self._config.observation_type), step,
                                    name='train_reconstructed_sequence')
-            self._logger.log_video(tf.transpose(batch['observation'][:4], [0, 1, 4, 2, 3]).numpy(),
+            self._logger.log_video(utils.make_video(batch['observation'][:4],
+                                                    self._config.observation_type),
                                    step, name='train_true_sequence')
         return train_posterior_beliefs
 
