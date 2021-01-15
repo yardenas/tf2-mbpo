@@ -1,6 +1,5 @@
 import os
 
-os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
