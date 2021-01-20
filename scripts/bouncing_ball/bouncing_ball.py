@@ -93,6 +93,7 @@ def compare_ground_truth_generated(ground_truth, reconstructed, generated,
     ax2.set_xticklabels(generation_stamps)
     ax2.tick_params(axis='y', which='both', left=False, right=False)
     ax2.set_title('Generation')
+    plt.savefig(name)
 
 
 def show_sequences(sequence, ax):
@@ -129,7 +130,7 @@ def main():
     config_dict['log_dir'] = 'results_ensemble'
     config_dict['n_step_loss'] = False
     config_dict['model_name'] = 'FeedForward'
-    config_dict['stack_observations'] = 2
+    config_dict['stack_observations'] = 1
     config = train_utils.make_config(config_dict)
     logger = utils.TrainingLogger(config)
     model = choose_model(config.model_name)(config, logger, (64, 64, config.stack_observations))
@@ -152,19 +153,22 @@ def main():
         last_belief = {'stochastic': beliefs['stochastic'][:, conditioning_length],
                        'deterministic': beliefs['deterministic'][:, conditioning_length]}
         if (i % 50) == 0:
-            logger.log_video(utils.make_video(posterior_reconstructed_sequence[:4],
-                                              config.observation_type), i + global_step,
+            logger.log_video(utils.standardize_video(posterior_reconstructed_sequence[:4],
+                                                     config.observation_type), i + global_step,
                              "test_reconstructed_sequence")
-            logger.log_video(utils.make_video(batch['observation'][:4], config.observation_type),
+            logger.log_video(utils.standardize_video(batch['observation'][:4],
+                                                     config.observation_type),
                              i + global_step, "test_true_sequence")
             _, reconstructed = model.generate_sequences_posterior(
                 last_belief, horizon, actions=actions, log_sequences=True, step=i + global_step)
             logger.log_metrics(global_step)
             compare_ground_truth_generated(
-                utils.make_video(batch['observation'], config.observation_type, False),
-                utils.make_video(posterior_reconstructed_sequence[:, :conditioning_length],
-                                 config.observation_type, False),
-                utils.make_video(reconstructed, config.observation_type, False))
+                utils.standardize_video(batch['observation'], config.observation_type, False),
+                utils.standardize_video(posterior_reconstructed_sequence[:, :conditioning_length],
+                                        config.observation_type, False),
+                utils.standardize_video(reconstructed, config.observation_type, False),
+                name=config.log_dir + '/results_' + str(i) + '.svg')
+    logger.log_metrics(i)
     print("Done!")
 
 
