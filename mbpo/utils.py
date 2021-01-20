@@ -215,9 +215,12 @@ def split_batch(batch, split_size):
 def make_video(sequence, modality, transpose=True):
     shape = tf.shape(sequence)
     if modality == 'binary_image' and shape[-1] != 1:
-        standardized = tf.reshape(sequence, [shape[0], -1, shape[2], shape[3], 1])
+        standardized = tf.transpose(tf.reshape(tf.transpose(sequence, [0, 2, 3, 1, 4]),
+                                  [shape[0], shape[2], shape[3], -1, 1]), [0, 3, 1, 2, 4])
     elif modality == 'rgb_image' and shape[-1] != 3:
-        standardized = tf.reshape(sequence, [shape[0], -1, shape[2], shape[3], 3])
+        standardized = tf.transpose(tf.reshape(tf.transpose(sequence, [0, 2, 3, 1, 4]),
+                                               [shape[0], shape[2], shape[3], -1, 3]),
+                                    [0, 3, 1, 2, 4])
     else:
         standardized = sequence
     if transpose:
