@@ -95,7 +95,7 @@ class SwagWorldModel(BayesianWorldModel):
             self._logger['test_terminals_' + str(i) + '_log_p'].update_state(-log_p_terminals)
             self._logger['test_kl_' + str(i)].update_state(kl)
             self._logger['test_ELBO_' + str(i)].update_state(loss)
-            samples_reconstructed.append(reconstructed.mode())
+            samples_reconstructed.append(reconstructed.mean())
             samples_beliefs.append(beliefs)
         return tf.stack(samples_reconstructed, 0), {k: tf.stack(
             [belief[k] for belief in samples_beliefs], 0) for k in samples_beliefs[0].keys()}
@@ -113,5 +113,5 @@ class SwagWorldModel(BayesianWorldModel):
         self._optimizer.apply_gradients(zip(grads, self._model.trainable_variables))
         self._logger['world_model_loss'].update_state(loss)
         self._logger['world_model_grads'].update_state(tf.linalg.global_norm(grads))
-        return_reconstructed = None if not log_sequences else reconstructed.mode()
+        return_reconstructed = None if not log_sequences else reconstructed.mean()
         return beliefs, return_reconstructed

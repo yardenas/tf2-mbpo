@@ -131,7 +131,7 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
             observation = tf.stop_gradient(observation) if stop_gradient else observation
             encoded_sequece = encoded_sequece.write(t, encoded)
             decoded_sequece = decoded_sequece.write(t, decoded)
-            sequence_observations = sequence_observations.write(t, prediction)
+            sequence_observations = sequence_observations.write(t, observation_dist.mean())
         stacked_sequence = tf.transpose(sequence_observations.stack(), [1, 0, 2, 3, 4])
         all_encoded = tf.transpose(encoded_sequece.stack(), [1, 0, 2])
         all_decoded = tf.transpose(decoded_sequece.stack(), [1, 0, 2, 3, 4])
@@ -160,7 +160,7 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
         self._logger['terminals_log_p'].update_state(-log_p_terminals)
         self._logger['world_model_loss'].update_state(loss)
         self._logger['world_model_grads'].update_state(tf.linalg.global_norm(grads))
-        sequences = tf.reshape(next_observation.mode(),
+        sequences = tf.reshape(next_observation.mean(),
                                tf.shape(batch['observation'][:, 1:])) if log_sequences else None
         return None, sequences
 

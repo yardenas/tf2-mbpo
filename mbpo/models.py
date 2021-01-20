@@ -137,9 +137,9 @@ class WorldModel(tf.Module):
             sequence_features = sequence_features.write(t, features)
         stacked_features = tf.transpose(sequence_features.stack(), [1, 0, 2])
         stacked_sequence = self._observation_decoder(
-            stacked_features).mode() if log_sequences else None
+            stacked_features).mean() if log_sequences else None
         return stacked_features, self._reward_decoder(
-            stacked_features).mode(), self._terminal_decoder(
+            stacked_features).mean(), self._terminal_decoder(
             stacked_features).mean(), stacked_sequence
 
 
