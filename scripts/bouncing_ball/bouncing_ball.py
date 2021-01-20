@@ -27,7 +27,7 @@ def load_data(data_dir, prefix='train', stack_observation=1):
             data.append(file_path)
     for file_path in data:
         sequence_batch = load_sequence(file_path)
-        for i in range(0, sequence_batch.shape[0], stack_observation):
+        for i in range(0, sequence_batch.shape[0]):
             observation = np.array(
                 sequence_batch[i], np.float32).squeeze() \
                 .reshape([-1, stack_observation, 64, 64]) \
@@ -133,7 +133,7 @@ def main():
     config = train_utils.make_config(config_dict)
     logger = utils.TrainingLogger(config)
     model = choose_model(config.model_name)(config, logger, (64, 64, config.stack_observations))
-    train_dataset = make_dataset('dataset', repeat=2 * config.stack_observations, shuffle=5000,
+    train_dataset = make_dataset('dataset', repeat=2, shuffle=5000,
                                  batch_size=16, stack_observations=config.stack_observations)
     global_step = 0
     for i, batch in enumerate(train_dataset):
