@@ -3,7 +3,7 @@ import numpy as np
 from tqdm import tqdm
 
 import mbpo.utils as utils
-import scripts.train as train_utils
+import experiments.train as train_utils
 
 
 def plot_values(values):
