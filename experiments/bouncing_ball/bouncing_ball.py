@@ -97,7 +97,8 @@ def main():
         global_step = i
         if i == 0:
             break
-    test_dataset = make_dataset('dataset', 'test', stack_observations=config.stack_observations)
+    test_dataset = make_dataset('dataset', 'test', stack_observations=config.stack_observations,
+                                batch_size=50)
     predictions, targets = [], []
     for i, batch in enumerate(test_dataset):
         global_step += i
@@ -111,7 +112,6 @@ def main():
         _, reconstructed = model.generate_sequences_posterior(
             last_belief, horizon, actions=actions, log_sequences=True, step=global_step)
         predictions.append(reconstructed.numpy())
-        print("woereoieior", predictions[i].shape)
         targets.append(batch['observation'][:, conditioning_length:].numpy())
         if (i % 50) == 0:
             logger.log_video(utils.standardize_video(posterior_reconstructed_sequence[:4],
