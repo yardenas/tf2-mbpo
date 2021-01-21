@@ -113,10 +113,11 @@ def evaluate(ground_truth, reconstructed, generated):
     accuracy = acc.result().numpy()
     probs = tf.squeeze(tf.stack([1.0 - generated_ravel, generated_ravel], -1))
     logits = tf.math.log(probs) + tf.math.log(2.0)
-    ece = tfp.stats.expected_calibration_error(
-        10,
-        logits=logits,
-        labels_true=tf.cast(gt_generation_interval_ravel, tf.int32)).numpy()
+    with tf.device('/CPU:0'):
+        ece = tfp.stats.expected_calibration_error(
+            10,
+            logits=logits,
+            labels_true=tf.cast(gt_generation_interval_ravel, tf.int32)).numpy()
     return {'nll': nll,
             'accuracy': accuracy,
             'ece': ece}
