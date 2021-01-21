@@ -172,7 +172,8 @@ def main():
         global_step = i
         if i == 0:
             break
-    test_dataset = make_dataset('dataset', 'test', stack_observations=config.stack_observations)
+    test_dataset = make_dataset('dataset', 'test', stack_observations=config.stack_observations,
+                                batch_size=8)
     for i, batch in enumerate(test_dataset):
         global_step += i
         sequence_length = tf.shape(batch['observation'])[1]
