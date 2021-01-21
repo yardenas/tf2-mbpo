@@ -15,7 +15,6 @@ def calibration_curve(predictions, labels, num_bins):
         bins = np.sort(confidences)[::step]
         if confidences.shape[0] % step != 1:
             bins = np.concatenate((bins, [np.max(confidences)]))
-        # bins = np.linspace(0.1, 1.0, 30)
         predictions = np.argmax(predictions, 1)
         bin_lowers = bins[:-1]
         bin_uppers = bins[1:]
@@ -66,6 +65,7 @@ def main():
     args = parser.parse_args()
     npz_array = np.load(args.path)
     predictions, labels = npz_array["predictions"], npz_array["targets"]
+    evalutaion = evaluate(predictions, labels)
     print("Done!")
 
 

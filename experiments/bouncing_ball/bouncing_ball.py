@@ -126,7 +126,6 @@ def main():
                 utils.standardize_video(reconstructed, config.observation_type, False),
                 name=config.log_dir + '/results_' + str(i) + '.svg')
     logger.log_metrics(global_step)
-    print(np.array(predictions).shape, "sksksksskslksljkslkjdlksdlkjs")
     np.savez_compressed(config.log_dir + '/test_results.npz',
                         predictions=np.array(predictions).reshape((-1,) + predictions[0].shape[1:]),
                         targets=np.array(targets).reshape((-1,) + targets[0].shape[1:]))
