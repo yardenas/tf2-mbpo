@@ -111,6 +111,7 @@ def main():
         _, reconstructed = model.generate_sequences_posterior(
             last_belief, horizon, actions=actions, log_sequences=True, step=global_step)
         predictions.append(reconstructed.numpy())
+        print("woereoieior", predictions[i].shape)
         targets.append(batch['observation'][:, conditioning_length:].numpy())
         if (i % 50) == 0:
             logger.log_video(utils.standardize_video(posterior_reconstructed_sequence[:4],
@@ -125,6 +126,8 @@ def main():
                                         config.observation_type, False),
                 utils.standardize_video(reconstructed, config.observation_type, False),
                 name=config.log_dir + '/results_' + str(i) + '.svg')
+        if i == 2:
+            break
     logger.log_metrics(global_step)
     np.savez_compressed(config.log_dir + '/test_results.npz',
                         predictions=np.array(predictions).reshape((-1,) + predictions[0].shape[1:]),
