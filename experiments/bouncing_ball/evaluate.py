@@ -63,7 +63,7 @@ def main():
     parser.add_argument('--path', type=str, required=True)
     parser.add_argument('--num_bins', type=int, default=20)
     args = parser.parse_args()
-    npz_array = np.load(args.path)
+    npz_array = np.load(args.path + '/test_results.npz')
     predictions, labels = npz_array["predictions"], npz_array["targets"]
     evalutaion = evaluate(predictions, labels)
     print("Done!")

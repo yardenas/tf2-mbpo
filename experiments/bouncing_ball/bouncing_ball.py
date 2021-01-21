@@ -95,8 +95,6 @@ def main():
         if (i % 50) == 0:
             logger.log_metrics(i)
         global_step = i
-        if i == 0:
-            break
     test_dataset = make_dataset('dataset', 'test', stack_observations=config.stack_observations,
                                 batch_size=50)
     predictions, targets = [], []
@@ -113,19 +111,18 @@ def main():
             last_belief, horizon, actions=actions, log_sequences=True, step=global_step)
         predictions.append(reconstructed.numpy())
         targets.append(batch['observation'][:, conditioning_length:].numpy())
-        if (i % 50) == 0:
-            logger.log_video(utils.standardize_video(posterior_reconstructed_sequence[:4],
-                                                     config.observation_type), global_step,
-                             "test_reconstructed_sequence")
-            logger.log_video(utils.standardize_video(batch['observation'][:4],
-                                                     config.observation_type),
-                             global_step, "test_true_sequence")
-            compare_ground_truth_generated(
-                utils.standardize_video(batch['observation'], config.observation_type, False),
-                utils.standardize_video(posterior_reconstructed_sequence[:, :conditioning_length],
-                                        config.observation_type, False),
-                utils.standardize_video(reconstructed, config.observation_type, False),
-                name=config.log_dir + '/results_' + str(i) + '.svg')
+        logger.log_video(utils.standardize_video(posterior_reconstructed_sequence[:4],
+                                                 config.observation_type), global_step,
+                         "test_reconstructed_sequence")
+        logger.log_video(utils.standardize_video(batch['observation'][:4],
+                                                 config.observation_type),
+                         global_step, "test_true_sequence")
+        compare_ground_truth_generated(
+            utils.standardize_video(batch['observation'], config.observation_type, False),
+            utils.standardize_video(posterior_reconstructed_sequence[:, :conditioning_length],
+                                    config.observation_type, False),
+            utils.standardize_video(reconstructed, config.observation_type, False),
+            name=config.log_dir + '/results_' + str(i) + '.svg')
     logger.log_metrics(global_step)
     np.savez_compressed(config.log_dir + '/test_results.npz',
                         predictions=np.array(predictions).reshape((-1,) + predictions[0].shape[1:]),
