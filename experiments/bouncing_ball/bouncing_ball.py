@@ -117,7 +117,7 @@ def main():
                                                      config.observation_type),
                              global_step, "test_true_sequence")
     logger.log_metrics(global_step)
-    np.savez(config.log_dir + '/test_results.npz',
+    np.savez_compressed(config.log_dir + '/test_results.npz',
              predictions=np.array(predictions).reshape((-1,) + predictions[0].shape[1:]),
              targets=np.array(targets).reshape((-1,) + targets[0].shape[1:]))
     print("Done!")
