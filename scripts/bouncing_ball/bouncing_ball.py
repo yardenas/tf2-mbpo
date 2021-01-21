@@ -103,14 +103,20 @@ def evaluate(ground_truth, reconstructed, generated):
     assert ground_truth.shape[1] == warmup_length + generation_length
     gt_generation_interval_ravel = tf.reshape(ground_truth[:, warmup_length:], [-1, 1])
     generated_ravel = tf.reshape(generated, [-1, 1])
-    nll = tf.keras.metrics.BinaryCrossentropy().update_state(gt_generation_interval_ravel,
-                                                             generated_ravel).result().numpy()
-    accuracy = tf.keras.metrics.BinaryAccuracy().update_state(gt_generation_interval_ravel,
-                                                              generated_ravel).result().nump()
-    ece = tfp.stats.calibration.expected_calibration_error(
-        15,
-        labels_true=tf.cast(gt_generation_interval_ravel, tf.int32),
-        labels_predicted=tf.cast(tf.math.greater(generated_ravel, 0.5), tf.int32))
+    bce = tf.keras.metrics.BinaryCrossentropy()
+    bce.update_state(gt_generation_interval_ravel,
+                     generated_ravel)
+    nll = bce.result().numpy()
+    acc = tf.keras.metrics.BinaryAccuracy()
+    acc.update_state(gt_generation_interval_ravel,
+                     generated_ravel)
+    accuracy = acc.result().numpy()
+    probs = tf.squeeze(tf.stack([1.0 - generated_ravel, generated_ravel], -1))
+    logits = tf.math.log(probs) + tf.math.log(2.0)
+    ece = tfp.stats.expected_calibration_error(
+        10,
+        logits=logits,
+        labels_true=tf.cast(gt_generation_interval_ravel, tf.int32)).numpy()
     return {'nll': nll,
             'accuracy': accuracy,
             'ece': ece}
@@ -163,6 +169,8 @@ def main():
         if (i % 50) == 0:
             logger.log_metrics(i)
         global_step = i
+        if i == 0:
+            break
     test_dataset = make_dataset('dataset', 'test', stack_observations=config.stack_observations)
     for i, batch in enumerate(test_dataset):
         global_step += i
