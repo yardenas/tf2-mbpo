@@ -8,6 +8,7 @@ import mbpo.utils as utils
 from mbpo.swag_feed_forward_model import SwagFeedForwardModel
 from mbpo.swag_world_model import SwagWorldModel
 
+from experiments.bouncing_ball.utils import compare_ground_truth_generated
 rng = tf.random.Generator.from_seed(0)
 
 
@@ -94,6 +95,8 @@ def main():
         if (i % 50) == 0:
             logger.log_metrics(i)
         global_step = i
+        if i == 0:
+            break
     test_dataset = make_dataset('dataset', 'test', stack_observations=config.stack_observations)
     predictions, targets = [], []
     for i, batch in enumerate(test_dataset):
@@ -116,10 +119,17 @@ def main():
             logger.log_video(utils.standardize_video(batch['observation'][:4],
                                                      config.observation_type),
                              global_step, "test_true_sequence")
+            compare_ground_truth_generated(
+                utils.standardize_video(batch['observation'], config.observation_type, False),
+                utils.standardize_video(posterior_reconstructed_sequence[:, :conditioning_length],
+                                        config.observation_type, False),
+                utils.standardize_video(reconstructed, config.observation_type, False),
+                name=config.log_dir + '/results_' + str(i) + '.svg')
     logger.log_metrics(global_step)
+    print(np.array(predictions).shape, "sksksksskslksljkslkjdlksdlkjs")
     np.savez_compressed(config.log_dir + '/test_results.npz',
-             predictions=np.array(predictions).reshape((-1,) + predictions[0].shape[1:]),
-             targets=np.array(targets).reshape((-1,) + targets[0].shape[1:]))
+                        predictions=np.array(predictions).reshape((-1,) + predictions[0].shape[1:]),
+                        targets=np.array(targets).reshape((-1,) + targets[0].shape[1:]))
     print("Done!")
 
 
