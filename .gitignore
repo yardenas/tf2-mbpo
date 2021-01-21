@@ -2,3 +2,4 @@ TODOS.md
 *.egg*
 .idea/
 __pycache__*
+dataset*

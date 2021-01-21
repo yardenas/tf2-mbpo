@@ -4,6 +4,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
+import tensorflow_probability as tfp
 
 import mbpo.utils as utils
 import scripts.train as train_utils
@@ -96,6 +97,25 @@ def compare_ground_truth_generated(ground_truth, reconstructed, generated,
     plt.savefig(name)
 
 
+def evaluate(ground_truth, reconstructed, generated):
+    warmup_length = reconstructed.shape[1]
+    generation_length = generated.shape[1]
+    assert ground_truth.shape[1] == warmup_length + generation_length
+    gt_generation_interval_ravel = tf.reshape(ground_truth[:, warmup_length:], [-1, 1])
+    generated_ravel = tf.reshape(generated, [-1, 1])
+    nll = tf.keras.metrics.BinaryCrossentropy().update_state(gt_generation_interval_ravel,
+                                                             generated_ravel).result().numpy()
+    accuracy = tf.keras.metrics.BinaryAccuracy().update_state(gt_generation_interval_ravel,
+                                                              generated_ravel).result().nump()
+    ece = tfp.stats.calibration.expected_calibration_error(
+        15,
+        labels_true=tf.cast(gt_generation_interval_ravel, tf.int32),
+        labels_predicted=tf.cast(tf.math.greater(generated_ravel, 0.5), tf.int32))
+    return {'nll': nll,
+            'accuracy': accuracy,
+            'ece': ece}
+
+
 def show_sequences(sequence, ax):
     plt.rcParams['figure.figsize'] = [15, 8]
     batch, length, width, height, depth = sequence.shape
@@ -145,6 +165,7 @@ def main():
         global_step = i
     test_dataset = make_dataset('dataset', 'test', stack_observations=config.stack_observations)
     for i, batch in enumerate(test_dataset):
+        global_step += i
         sequence_length = tf.shape(batch['observation'])[1]
         conditioning_length = sequence_length // 5
         horizon = sequence_length - conditioning_length
@@ -152,23 +173,26 @@ def main():
         posterior_reconstructed_sequence, beliefs = model.reconstruct_sequences_posterior(batch)
         last_belief = {'stochastic': beliefs['stochastic'][:, conditioning_length],
                        'deterministic': beliefs['deterministic'][:, conditioning_length]}
+        _, reconstructed = model.generate_sequences_posterior(
+            last_belief, horizon, actions=actions, log_sequences=True, step=global_step)
+        for k, v in evaluate(batch['observation'],
+                             posterior_reconstructed_sequence[:, :conditioning_length],
+                             reconstructed):
+            logger[k].update_state(v)
         if (i % 50) == 0:
             logger.log_video(utils.standardize_video(posterior_reconstructed_sequence[:4],
-                                                     config.observation_type), i + global_step,
+                                                     config.observation_type), global_step,
                              "test_reconstructed_sequence")
             logger.log_video(utils.standardize_video(batch['observation'][:4],
                                                      config.observation_type),
-                             i + global_step, "test_true_sequence")
-            _, reconstructed = model.generate_sequences_posterior(
-                last_belief, horizon, actions=actions, log_sequences=True, step=i + global_step)
-            logger.log_metrics(global_step)
+                             global_step, "test_true_sequence")
             compare_ground_truth_generated(
                 utils.standardize_video(batch['observation'], config.observation_type, False),
                 utils.standardize_video(posterior_reconstructed_sequence[:, :conditioning_length],
                                         config.observation_type, False),
                 utils.standardize_video(reconstructed, config.observation_type, False),
                 name=config.log_dir + '/results_' + str(i) + '.svg')
-    logger.log_metrics(i)
+    logger.log_metrics(global_step)
     print("Done!")
 
 
