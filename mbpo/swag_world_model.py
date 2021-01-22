@@ -36,8 +36,8 @@ class SwagWorldModel(BayesianWorldModel):
             tf.optimizers.Adam(
                 config.model_learning_rate,
                 clipnorm=config.grad_clip_norm),
-            5000,
-            5)
+            2000,
+            50)
         self._model = models.WorldModel(
             config.observation_type,
             observation_shape,
@@ -53,7 +53,7 @@ class SwagWorldModel(BayesianWorldModel):
         beliefs = []
         seeds = tf.cast(self._rng.make_seeds(self._posterior_samples), tf.int32)
         for i in range(self._posterior_samples):
-            self._optimizer.sample_and_assign(0.0, self._model.trainable_variables,
+            self._optimizer.sample_and_assign(1.0, self._model.trainable_variables,
                                               seed=seeds[:, i])
             belief, embedding = self._model(prev_action, current_observation)
             beliefs.append(belief)
@@ -68,7 +68,7 @@ class SwagWorldModel(BayesianWorldModel):
         samples_reconstructed = []
         seeds = tf.cast(self._rng.make_seeds(self._posterior_samples), tf.int32)
         for i in range(self._posterior_samples):
-            self._optimizer.sample_and_assign(0.0, self._model.trainable_variables,
+            self._optimizer.sample_and_assign(1.0, self._model.trainable_variables,
                                               seed=seeds[:, i])
             features, rewards, terminals, reconstructed = self._model.generate_sequence(
                 initial_belief, horizon, actor=actor, actions=actions,
@@ -86,7 +86,7 @@ class SwagWorldModel(BayesianWorldModel):
         samples_beliefs = []
         seeds = tf.cast(self._rng.make_seeds(self._posterior_samples), tf.int32)
         for i in range(self._posterior_samples):
-            self._optimizer.sample_and_assign(0.0, self._model.trainable_variables,
+            self._optimizer.sample_and_assign(1.0, self._model.trainable_variables,
                                               seed=seeds[:, i])
             loss, kl, log_p_observations, log_p_reward, \
             log_p_terminals, reconstructed, beliefs = self._model.inference_step(batch)
