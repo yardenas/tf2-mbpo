@@ -23,7 +23,7 @@ def compare_ground_truth_generated(ground_truth, reconstructed, generated,
     warmup_length = reconstructed.shape[1]
     generation_length = generated.shape[1]
     assert ground_truth.shape[1] == warmup_length + generation_length
-    fig = plt.figure(figsize=(15, 4), constrained_layout=True)
+    fig = plt.figure(figsize=(11, 3.5), constrained_layout=True)
     spec = fig.add_gridspec(ncols=2, nrows=1, width_ratios=[reconstruct_skip, generate_skip],
                             height_ratios=[1])
     ax1 = fig.add_subplot(spec[0, 0])

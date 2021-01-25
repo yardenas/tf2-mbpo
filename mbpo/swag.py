@@ -42,8 +42,7 @@ class SWAG(SWA):
 
     def _resource_apply_sparse_duplicate_indices(self, grad, var, indices):
         train_op = self._optimizer._resource_apply_sparse_duplicate_indices(
-            grad, var, indices
-        )
+            grad, var, indices)
         mean_op, mean_squared_op, cov_mat_sqrt_op = self._apply_mean_op(train_op, var)
         return tf.group(train_op, mean_op, mean_squared_op, cov_mat_sqrt_op)
 
@@ -105,6 +104,12 @@ class SWAG(SWA):
                 except Exception as e:
                     warnings.warn("Unable to assign sample to {} : {}".format(var, e))
             tf.group(assign_ops)
+        else:
+            tf.print("SWAG did not sample new variables. ",
+                     "\nIterations so far: ", self.iterations,
+                     "\nWarmup time: ", start_averaging,
+                     "\nSnapshots so far: ", num_snapshots,
+                     "\nMax models: ", max_num_models)
 
     @tf.function(experimental_relax_shapes=True)
     def sample(self, scale, var, seed):
