@@ -74,7 +74,7 @@ def main():
     config_dict = train_utils.define_config()
     config_dict['observation_type'] = 'binary_image'
     config_dict['model_learning_rate'] = 5e-5
-    config_dict['seed'] = int(0)
+    config_dict['seed'] = 0
     config_dict['log_dir'] = 'results_ensemble'
     config_dict['n_step_loss'] = False
     config_dict['model_name'] = 'FeedForward'
