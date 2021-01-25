@@ -201,6 +201,11 @@ def preprocess(image):
     return tf.cast(image, tf.float32) / 255.0 - 0.5
 
 
+def normalize_clip(data, mean, stddev, clip):
+    return tf.clip_by_value((data - mean) / stddev,
+                            -clip, clip)
+
+
 def clone_model(a, b):
     for var_a, var_b in zip(a.variables, b.variables):
         var_b.assign(var_a)
@@ -216,7 +221,8 @@ def standardize_video(sequence, modality, transpose=True):
     shape = tf.shape(sequence)
     if modality == 'binary_image' and shape[-1] != 1:
         standardized = tf.transpose(tf.reshape(tf.transpose(sequence, [0, 2, 3, 1, 4]),
-                                  [shape[0], shape[2], shape[3], -1, 1]), [0, 3, 1, 2, 4])
+                                               [shape[0], shape[2], shape[3], -1, 1]),
+                                    [0, 3, 1, 2, 4])
     elif modality == 'rgb_image' and shape[-1] != 3:
         standardized = tf.transpose(tf.reshape(tf.transpose(sequence, [0, 2, 3, 1, 4]),
                                                [shape[0], shape[2], shape[3], -1, 3]),

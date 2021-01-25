@@ -128,7 +128,7 @@ class MBPO(tf.Module):
 
     def __call__(self, observation, training=True):
         scaled_obs = np.clip(
-            (observation - self._experience.obs_mean) / self._experience.obs_stddev,
+            (observation - self._experience._obs_mean) / self._experience._obs_stddev,
             -10.0, 10.0)
         if training:
             if self.warm:
@@ -139,7 +139,6 @@ class MBPO(tf.Module):
                 action = self._warmup_policy()
             if self.time_to_update and self.warm:
                 print("Updating world model, actor and critic.")
-                self._experience.update_statistics()
                 for _ in tqdm(range(self._config.update_steps), position=0, leave=True):
                     batch = self._experience.sample(self._config.batch_size)
                     self.update_model(batch)
