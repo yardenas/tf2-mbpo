@@ -52,7 +52,7 @@ def compare_ground_truth_generated(ground_truth, reconstructed, generated,
     _, _, width, height, _ = ground_truth.shape
     warmup_stamps = np.arange(1, warmup_length, reconstruct_skip)
     ax1.set_yticks([height / 2, height * 3 / 2])
-    ax1.set_yticklabels(['True', 'Predicted'])
+    ax1.set_yticklabels(['Predict', 'True'])
     ax1.set_xticks(np.arange(1, len(warmup_stamps) * 2, 2) * width / 2)
     ax1.set_xticklabels(warmup_stamps)
     ax1.set_title('Warmup')

@@ -9,8 +9,6 @@ from experiments.bouncing_ball.utils import compare_ground_truth_generated
 from mbpo.swag_feed_forward_model import SwagFeedForwardModel
 from mbpo.swag_world_model import SwagWorldModel
 
-rng = tf.random.Generator.from_seed(0)
-
 
 # https://github.com/davidsandberg/rl_ssms/blob/master/bouncing_ball_prediction.ipynb
 def load_sequence(filename):
@@ -73,8 +71,6 @@ def choose_model(model_name):
 
 
 def main():
-    tf.random.set_seed(0)
-    np.random.seed(0)
     config_dict = train_utils.define_config()
     config_dict['observation_type'] = 'binary_image'
     config_dict['model_learning_rate'] = 5e-5
@@ -84,6 +80,8 @@ def main():
     config_dict['model_name'] = 'FeedForward'
     config_dict['stack_observations'] = 1
     config = train_utils.make_config(config_dict)
+    tf.random.set_seed(config.seed)
+    np.random.seed(config.seed)
     logger = utils.TrainingLogger(config)
     model = choose_model(config.model_name)(config, logger, (64, 64, config.stack_observations))
     train_dataset = make_dataset('dataset', repeat=2, shuffle=5000,
