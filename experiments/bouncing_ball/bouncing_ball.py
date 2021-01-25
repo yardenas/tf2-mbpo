@@ -5,10 +5,10 @@ import tensorflow as tf
 
 import experiments.train as train_utils
 import mbpo.utils as utils
+from experiments.bouncing_ball.utils import compare_ground_truth_generated
 from mbpo.swag_feed_forward_model import SwagFeedForwardModel
 from mbpo.swag_world_model import SwagWorldModel
 
-from experiments.bouncing_ball.utils import compare_ground_truth_generated
 rng = tf.random.Generator.from_seed(0)
 
 

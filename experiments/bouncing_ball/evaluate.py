@@ -1,9 +1,11 @@
-import os
 import argparse
+import os
 
 import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
+
+import experiments.bouncing_ball.utils as utils
 
 
 # https://github.com/wjmaddox/swa_gaussian/blob/b172d93278fdb92522c8fccb7c6bfdd6f710e4f0
@@ -66,6 +68,9 @@ def summarize_experiment(experiment_runs, args):
         print('Analyzing experiment: {}'.format(run))
         npz_array = np.load(run)
         predictions, labels = npz_array['predictions'], npz_array['targets']
+        utils.compare_ground_truth_generated_2(
+            labels, predictions,
+            name=os.path.join(args.path, 'results_' + run + '.svg'))
         evaluations = evaluate(predictions, labels)
         calibration_metrics = calibration_curve(predictions, labels, args.num_bins)
         evaluations.update(calibration_metrics)
