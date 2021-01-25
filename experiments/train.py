@@ -94,9 +94,8 @@ def make_config(config):
             assert not value, "Default bool params should be set to false."
             parser.add_argument('--{}'.format(key), action='store_true')
         else:
-            print("dldldldldl {}: {}".format(key, value))
             parser.add_argument('--{}'.format(key),
-                                type=type(value) if value else str, default=value)
+                                type=type(value) if value is not None else str, default=value)
     return parser.parse_args()
 
 

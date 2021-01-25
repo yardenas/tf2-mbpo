@@ -80,7 +80,6 @@ def main():
     config_dict['model_name'] = 'FeedForward'
     config_dict['stack_observations'] = 1
     config = train_utils.make_config(config_dict)
-    print("dldldldldldldl", type(config.seed))
     tf.random.set_seed(config.seed)
     np.random.seed(config.seed)
     logger = utils.TrainingLogger(config)
