@@ -37,7 +37,7 @@ class SwagWorldModel(BayesianWorldModel):
                 config.model_learning_rate,
                 clipnorm=config.grad_clip_norm),
             2000,
-            50)
+            5)
         self._model = models.WorldModel(
             config.observation_type,
             observation_shape,
