@@ -6,6 +6,7 @@ import numpy as np
 import tensorflow as tf
 
 import experiments.bouncing_ball.utils as utils
+from mbpo.utils import dump_string, standardize_video
 
 
 # https://github.com/wjmaddox/swa_gaussian/blob/b172d93278fdb92522c8fccb7c6bfdd6f710e4f0
@@ -67,7 +68,8 @@ def summarize_experiment(experiment_runs, args):
     for i, run in enumerate(experiment_runs):
         print('Analyzing experiment: {}'.format(run))
         npz_array = np.load(run)
-        predictions, labels = npz_array['predictions'], npz_array['targets']
+        predictions, labels = standardize_video(npz_array['predictions'], 'binary_image', False), \
+                              standardize_video(npz_array['targets'], 'binary_image', False)
         utils.compare_ground_truth_generated_2(
             labels, predictions,
             name=os.path.join(args.path, 'results_' + str(i) + '.svg'))
@@ -88,8 +90,12 @@ def summarize_experiment(experiment_runs, args):
 
     statistics = {k: compute_statistics(v) for k, v in all_metrics.items() if k not in
                   ['calib_confidence', 'calib_accuracy', 'p']}
+    string = ""
     for k, v in statistics.items():
-        print('{}: {}'.format(k, v))
+        stat = '{}: {}'.format(k, v)
+        print(stat)
+        string += stat
+    dump_string(string, os.path.join(args.path, args.title_name) + '.txt')
 
     fig = plt.figure(figsize=(11 / 3, 3.5))
     ax = fig.add_subplot()
@@ -99,11 +105,13 @@ def summarize_experiment(experiment_runs, args):
     ax.set_xlabel('Confidence')
     ax.set_ylabel('Accuracy')
     ax.set_title(args.title_name)
+    plt.show()
     ax.autoscale(False)
-    ax.plot([0, 1], [0, 1], 'k--')
+    ax.plot([0, 1], [0, 1], 'k--', label='Ideal calibration')
     ax.grid(True)
+    ax.legend(loc='lower right')
     fig.tight_layout()
-    plt.savefig(os.path.join(args.path, args.title_name) + '.svg')
+    fig.savefig(os.path.join(args.path, args.title_name) + '.svg')
 
 
 def collect_experiment_runs(path):
