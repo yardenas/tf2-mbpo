@@ -32,8 +32,8 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
             (), terminal_layers, config.units, tf.nn.relu, 'bernoulli')
 
     def _encode(self, observation, action):
-        x = self._encoder(observation)
-        x = tf.concat([x, action], -1)
+        x = self._encoder(observation[:, None, ...])
+        x = tf.concat([tf.squeeze(x), action], -1)
         x = self._posterior_decoder(x)
         mean, stddev = tf.split(x, 2, -1)
         stddev = tf.math.softplus(stddev)
@@ -97,7 +97,6 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
         stacked_all = tf.stack(samples_reconstructed, 0)
         return stacked_all, {'stochastic': stacked_all, 'deterministic': stacked_all}
 
-    @tf.function
     def _unroll_sequence(self, initial_observation, horizon, actions, next_observations=None,
                          stop_gradient=True):
         inferred = {'prior_mus': tf.TensorArray(tf.float32, horizon),
