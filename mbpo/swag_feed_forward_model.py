@@ -47,7 +47,7 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
     def _step(self, observation, action):
         posterior = self._encode(observation, action)
         z = posterior.sample()
-        decoded = self._decode(z, action).mean() + observation
+        decoded = self._decode(z, action).mean()
         prior = tfd.MultivariateNormalDiag(tf.zeros_like(posterior.mean()),
                                            tf.ones_like(posterior.stddev()))
         return prior, posterior, decoded, z
