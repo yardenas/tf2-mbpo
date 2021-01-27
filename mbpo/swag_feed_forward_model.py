@@ -25,7 +25,9 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
         self._posterior_decoder = tf.keras.Sequential(
             [tf.keras.layers.Dense(config.units, tf.nn.relu) for _ in range(1)] +
             [tf.keras.layers.Dense(2 * config.stochastic_size)])
-        self._decoder = blocks.decoder(config.observation_type, observation_shape,
+        observation_type = 'image_logits' if config.observation_type in \
+                                             ['rgb_image', 'binary_image'] else 'dense_logits'
+        self._decoder = blocks.decoder(observation_type, observation_shape,
                                        3, config.units)
         self._reward_decoder = blocks.DenseDecoder((), reward_layers, config.units, tf.nn.relu)
         self._terminal_decoder = blocks.DenseDecoder(
@@ -47,7 +49,7 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
     def _step(self, observation, action):
         posterior = self._encode(observation, action)
         z = posterior.sample()
-        decoded = self._decode(z, action).mean() + tf.stop_gradient(observation)
+        decoded = self._decode(z, action)
         prior = tfd.MultivariateNormalDiag(tf.zeros_like(posterior.mean()),
                                            tf.ones_like(posterior.stddev()))
         return prior, posterior, decoded, z
@@ -57,7 +59,7 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
             observation_dist = tfd.Independent(tfd.Normal(decoded, 1.0), len(self._shape))
         elif self._type == 'binary_image':
             observation_dist = tfd.Independent(tfd.Bernoulli(
-                probs=decoded, dtype=tf.float32), len(self._shape))
+                logits=decoded, dtype=tf.float32), len(self._shape))
         else:
             raise RuntimeError("Output type is wrong.")
         cat = tf.concat([stochastics, action], -1)

@@ -11,6 +11,10 @@ def decoder(type_, shape, layers, units):
         return ConvDecoder(shape, dist='bernoulli')
     elif type_ == 'dense':
         return DenseDecoder(shape, layers, units)
+    elif type_ == 'image_logits':
+        ConvDecoder(shape, dist='bernoulli')
+    elif type_ == 'dense_logits':
+        DenseDecoder(shape, layers, units, dist='logits')
 
 
 def encoder(type_, shape, layers, units):
@@ -42,6 +46,8 @@ class ConvDecoder(tf.Module):
             return tfd.Independent(tfd.Normal(x, 1.0), len(self._shape))
         elif self._dist == 'bernoulli':
             return tfd.Independent(tfd.Bernoulli(x, dtype=tf.float32), len(self._shape))
+        elif self._dist == 'logits':
+            return x
 
 
 class ConvEncoder(tf.Module):
@@ -80,6 +86,8 @@ class DenseDecoder(tf.Module):
             return tfd.Independent(tfd.Normal(x, 1.0), len(self._shape))
         elif self._dist == 'bernoulli':
             return tfd.Independent(tfd.Bernoulli(x, dtype=tf.float32), len(self._shape))
+        elif self._dist == 'logits':
+            return x
 
 
 class DenseEncoder(tf.Module):
