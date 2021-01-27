@@ -47,7 +47,7 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
     def _step(self, observation, action):
         posterior = self._encode(observation, action)
         z = posterior.sample()
-        decoded = self._decode(z, action).mode()
+        decoded = self._decode(z, action).mean() + observation
         prior = tfd.MultivariateNormalDiag(tf.zeros_like(posterior.mean()),
                                            tf.ones_like(posterior.stddev()))
         return prior, posterior, decoded, z
@@ -57,7 +57,7 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
             observation_dist = tfd.Independent(tfd.Normal(decoded, 1.0), len(self._shape))
         elif self._type == 'binary_image':
             observation_dist = tfd.Independent(tfd.Bernoulli(
-                decoded, dtype=tf.float32), len(self._shape))
+                probs=decoded, dtype=tf.float32), len(self._shape))
         else:
             raise RuntimeError("Output type is wrong.")
         cat = tf.concat([stochastics, action], -1)
