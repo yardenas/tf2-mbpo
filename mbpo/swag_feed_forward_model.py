@@ -14,7 +14,7 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
             tf.optimizers.Adam(
                 config.model_learning_rate,
                 clipnorm=config.grad_clip_norm),
-            5000, 5)
+            2000, 5)
         self._n_step_loss = config.n_step_loss
         self._posterior_samples = config.posterior_samples
         self._shape = observation_shape
