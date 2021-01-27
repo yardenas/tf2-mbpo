@@ -64,22 +64,22 @@ def compare_ground_truth_generated(ground_truth, reconstructed, generated,
     plt.savefig(name)
 
 
-def compare_ground_truth_generated_2(ground_truth, generated, skip=4, name=''):
+def compare_ground_truth_generated_2(ground_truth, generated, skip=3, name=''):
     fig = plt.figure(figsize=(11, 3))
     ax = fig.add_subplot()
     show_sequences(generated[:2, ::skip], ax, label='Generated')
-    show_sequences(ground_truth[:2, ::skip], ax, color=(1.0, 0.0, 0.0), alpha=0.4,
+    show_sequences(ground_truth[:2, ::skip], ax, color=(1.0, 0.0, 0.0), alpha=0.55,
                    label='Ground Truth')
     lgnd = ax.legend(*ax.get_legend_handles_labels(),
-                     loc='center', ncol=2, bbox_to_anchor=(0.5, -0.35))
+                     loc='center', ncol=2, bbox_to_anchor=(0.5, -0.4))
     for handle in lgnd.legendHandles:
         handle._legmarker.set_markersize(6)
     _, length, width, height, _ = ground_truth.shape
-    stamps = np.arange(1, length, skip)
+    stamps = np.arange(1, length + 1, skip)
     ax.set_xticks(np.arange(1, len(stamps) * 2, 2) * width / 2)
     ax.set_xticklabels(stamps)
     ax.tick_params(axis='y', which='both', left=False, right=False, labelleft=False)
     ax.set_xlabel('Time horizon')
     fig.tight_layout()
-    fig.subplots_adjust(top=1.15)
+    fig.subplots_adjust(top=1.1)
     plt.savefig(name)

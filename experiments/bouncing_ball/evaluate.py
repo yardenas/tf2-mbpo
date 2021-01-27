@@ -64,13 +64,13 @@ def evaluate(predictions, labels):
 
 def summarize_experiment(experiment_runs, args):
     experiment_results = []
-    for run in experiment_runs:
+    for i, run in enumerate(experiment_runs):
         print('Analyzing experiment: {}'.format(run))
         npz_array = np.load(run)
         predictions, labels = npz_array['predictions'], npz_array['targets']
         utils.compare_ground_truth_generated_2(
             labels, predictions,
-            name=os.path.join(args.path, 'results_' + run + '.svg'))
+            name=os.path.join(args.path, 'results_' + str(i) + '.svg'))
         evaluations = evaluate(predictions, labels)
         calibration_metrics = calibration_curve(predictions, labels, args.num_bins)
         evaluations.update(calibration_metrics)
@@ -86,7 +86,8 @@ def summarize_experiment(experiment_runs, args):
                 'l_percentile': l_percentile,
                 'u_percentile': u_percentile}
 
-    statistics = {k: compute_statistics(v) for k, v in all_metrics.items()}
+    statistics = {k: compute_statistics(v) for k, v in all_metrics.items() if k not in
+                  ['calib_confidence', 'calib_accuracy', 'p']}
     for k, v in statistics.items():
         print('{}: {}'.format(k, v))
 
@@ -98,9 +99,10 @@ def summarize_experiment(experiment_runs, args):
     ax.set_xlabel('Confidence')
     ax.set_ylabel('Accuracy')
     ax.set_title(args.title_name)
+    ax.autoscale(False)
     ax.plot([0, 1], [0, 1], 'k--')
     ax.grid(True)
-    fig.subplots_adjust(left=0.15, right=0.85, top=0.90, bottom=0.15)
+    fig.tight_layout()
     plt.savefig(os.path.join(args.path, args.title_name) + '.svg')
 
 
@@ -115,7 +117,7 @@ def collect_experiment_runs(path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--path', type=str, required=True)
-    parser.add_argument('--num_bins', type=int, default=20)
+    parser.add_argument('--num_bins', type=int, default=40)
     parser.add_argument('--title_name', required=True)
     args = parser.parse_args()
     experiment_runs = collect_experiment_runs(args.path)

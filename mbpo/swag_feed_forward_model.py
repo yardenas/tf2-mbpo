@@ -35,7 +35,6 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
         self._reward_decoder = blocks.DenseDecoder((), reward_layers, config.units, tf.nn.relu)
         self._terminal_decoder = blocks.DenseDecoder(
             (), terminal_layers, config.units, tf.nn.relu, 'bernoulli')
-        self._rng = tf.random.Generator.from_seed(config.seed)
 
     def _encode(self, observation):
         x = self._encoder[0](observation)
