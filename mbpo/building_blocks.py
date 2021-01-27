@@ -12,9 +12,9 @@ def decoder(type_, shape, layers, units):
     elif type_ == 'dense':
         return DenseDecoder(shape, layers, units)
     elif type_ == 'image_logits':
-        ConvDecoder(shape, dist='logits')
+        return ConvDecoder(shape, dist='logits')
     elif type_ == 'dense_logits':
-        DenseDecoder(shape, layers, units, dist='logits')
+        return DenseDecoder(shape, layers, units, dist='logits')
     else:
         raise RuntimeError("Unsupported observation type.")
 
