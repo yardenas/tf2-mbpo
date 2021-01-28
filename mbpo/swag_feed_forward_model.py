@@ -122,7 +122,8 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
         posterior_stddev = tf.math.softplus(posterior_stddev)
         posterior = tfd.MultivariateNormalDiag(posterior_mean, posterior_stddev)
         z = posterior.sample()
-        decoded = self._decoder(z)
+        cat = tf.concat([obs_embd, z], -1)
+        decoded = self._decoder(cat)
         prior_mean, prior_stddev = tf.split(self._prior_decoder(inputs), 2, -1)
         prior_stddev = tf.math.softplus(prior_stddev)
         prior = tfd.MultivariateNormalDiag(prior_mean, prior_stddev)
@@ -135,7 +136,8 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
         prior_stddev = tf.math.softplus(prior_stddev)
         prior = tfd.MultivariateNormalDiag(prior_mean, prior_stddev)
         z = prior.sample()
-        decoded = self._decoder(z)
+        cat = tf.concat([obs_embd, z], -1)
+        decoded = self._decoder(cat)
         return prior, decoded, z
 
     def _to_distributions(self, stochastics, decoded, action, with_rewards_terminals=True):
