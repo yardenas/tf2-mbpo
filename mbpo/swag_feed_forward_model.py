@@ -118,7 +118,7 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
             observation = self._observation_dist(decoded).mode() if \
                 next_observations is None else next_observations[:, t]
             observation = tf.stop_gradient(observation) if stop_gradient else observation
-            inferred['decoded'] = inferred['decoded'].write(t, observation)
+            inferred['decoded'] = inferred['decoded'].write(t, decoded)
             inferred['stochastics'] = inferred['stochastics'].write(t, z)
             inferred['prior_mus'] = inferred['prior_mus'].write(t, prior.mean())
             inferred['prior_stddevs'] = inferred['prior_stddevs'].write(t, prior.stddev())
