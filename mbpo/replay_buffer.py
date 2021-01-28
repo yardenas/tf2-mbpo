@@ -4,6 +4,7 @@ import os
 
 import numpy as np
 import tensorflow as tf
+from tensorflow_probability import stats as tfps
 
 import mbpo.utils as utils
 
@@ -24,8 +25,9 @@ class ReplayBuffer(object):
                         'info': []}
         self._obs_mean = tf.Variable(tf.zeros(observation_shape),
                                      dtype=np.float32, trainable=False)
-        self._obs_stddev = tf.Variable(tf.ones(observation_shape),
-                                       dtype=np.float32, trainable=False)
+        self._obs_variance = tf.Variable(tf.zeros(observation_shape),
+                                         dtype=np.float32, trainable=False)
+        self._obs_moving_stats_count = tf.Variable(0)
 
     # https://github.com/danijar/dreamer/blob/02
     # f0210f5991c7710826ca7881f19c64a012290c/tools.py  # L157
@@ -77,15 +79,17 @@ class ReplayBuffer(object):
         np.savez_compressed(self._data_path, **episode_data)
 
     def _update_statistics(self, observation):
-        mean = np.mean(observation, 0)
-        stddev = np.std(observation, 0)
-        self._obs_mean.assign(mean)
-        self._obs_stddev.assign(stddev)
+        tfps.moving_stats.assign_moving_mean_variance(
+            observation,
+            self._obs_mean,
+            self._obs_variance,
+            zero_debias_count=self._obs_moving_stats_count)
 
     def _preprocess(self, data, observation_type):
         if observation_type == 'dense':
             data['observation'] = utils.normalize_clip(
-                data['observation'], self._obs_mean, self._obs_stddev, 10.0)
+                data['observation'], tf.convert_to_tensor(self._obs_mean),
+                tf.sqrt(tf.convert_to_tensor(self._obs_variance)), 10.0)
         elif observation_type == 'rgb_image':
             data['observation'] = utils.preprocess(data['observation'])
         elif observation_type == 'binary_image':
@@ -105,7 +109,7 @@ class ReplayBuffer(object):
                     v.append(transition['next_observation'])
                 else:
                     v.append(transition[k])
-        if transition['terminal']:
+        if transition['terminal'] or transition['info'].get('TimeLimit.truncated'):
             self._finalize_episode()
             for v in self._buffer.values():
                 v.clear()
