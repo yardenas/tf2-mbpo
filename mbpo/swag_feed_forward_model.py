@@ -55,17 +55,21 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
         return prior, posterior, decoded, z
 
     def _to_distributions(self, stochastics, decoded, action):
-        if self._type == 'rgb_image':
-            observation_dist = tfd.Independent(tfd.Normal(decoded, 1.0), len(self._shape))
-        elif self._type == 'binary_image':
-            observation_dist = tfd.Independent(tfd.Bernoulli(
-                logits=decoded, dtype=tf.float32), len(self._shape))
-        else:
-            raise RuntimeError("Output type is wrong.")
+        observation_dist = self._observation_dist(decoded)
         cat = tf.concat([stochastics, action], -1)
         reward_dist = self._reward_decoder(cat)
         terminal_dist = self._terminal_decoder(cat)
         return observation_dist, reward_dist, terminal_dist
+
+    def _observation_dist(self, logits):
+        if self._type == 'rgb_image':
+            observation_dist = tfd.Independent(tfd.Normal(logits, 1.0), len(self._shape))
+        elif self._type == 'binary_image':
+            observation_dist = tfd.Independent(tfd.Bernoulli(
+                logits=logits, dtype=tf.float32), len(self._shape))
+        else:
+            raise RuntimeError("Output type is wrong.")
+        return observation_dist
 
     def _update_beliefs(self, prev_action, current_observation):
         pass
@@ -111,7 +115,7 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
         for t in range(horizon):
             action = actions[:, t]
             prior, posterior, decoded, z = self._step(observation, action)
-            observation = decoded if \
+            observation = self._observation_dist(decoded).mode() if \
                 next_observations is None else next_observations[:, t]
             observation = tf.stop_gradient(observation) if stop_gradient else observation
             inferred['decoded'] = inferred['decoded'].write(t, observation)
