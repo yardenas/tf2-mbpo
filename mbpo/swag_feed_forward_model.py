@@ -81,6 +81,7 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
             action = actions[:, t]
             if next_observations is None:
                 prior, decoded, z = self._generation_step(observation, action)
+                observation = self._observation_dist(decoded).mode()
             else:
                 prior, posterior, decoded, z = self._inference_step(
                     observation,
@@ -88,6 +89,7 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
                 inferred['posterior_mus'] = inferred['posterior_mus'].write(t, posterior.mean())
                 inferred['posterior_stddevs'] = inferred['posterior_stddevs'].write(
                     t, posterior.stddev())
+                observation = next_observations[:, t]
             observation = tf.stop_gradient(observation) if stop_gradient else observation
             inferred['decoded'] = inferred['decoded'].write(t, decoded)
             inferred['stochastics'] = inferred['stochastics'].write(t, z)
@@ -111,9 +113,9 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
         return prior, posterior, stacked['decoded'], stacked['stochastics']
 
     def _inference_step(self, observation, next_observation, action):
-        obs_embd = tf.squeeze(self._encoder(observation[:, None, ...]))
+        obs_cat = tf.concat([observation[:, None, ...], next_observation[:, None, ...]], 1)
+        obs_embd, next_obs_embd = tf.split(self._encoder(obs_cat), 2, 1)
         inputs = tf.concat([obs_embd, action], -1)
-        next_obs_embd = tf.squeeze(self._encoder(next_observation[:, None, ...]))
         x = self._posterior_decoder(tf.concat([inputs, next_obs_embd], -1))
         posterior_mean, posterior_stddev = tf.split(x, 2, -1)
         posterior_stddev = tf.math.softplus(posterior_stddev)
