@@ -84,7 +84,7 @@ def main():
     np.random.seed(config.seed)
     logger = utils.TrainingLogger(config)
     model = choose_model(config.model_name)(config, logger, (64, 64, config.stack_observations))
-    train_dataset = make_dataset('dataset', repeat=2, shuffle=5000,
+    train_dataset = make_dataset('dataset', repeat=3, shuffle=5000,
                                  batch_size=16, stack_observations=config.stack_observations)
     global_step = 0
     for i, batch in enumerate(train_dataset):
