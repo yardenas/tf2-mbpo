@@ -22,8 +22,6 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
         self._stochastic_size = config.stochastic_size
         self._encoder = blocks.encoder(config.observation_type,
                                        observation_shape, 3, config.units)
-        self._bla_encoder = blocks.encoder(config.observation_type,
-                                           observation_shape, 3, config.units)
         self._posterior_decoder = tf.keras.Sequential(
             [tf.keras.layers.Dense(config.units, tf.nn.relu) for _ in range(1)] +
             [tf.keras.layers.Dense(2 * config.stochastic_size)])
@@ -34,8 +32,6 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
                                              ['rgb_image', 'binary_image'] else 'dense_logits'
         self._decoder = blocks.decoder(observation_type, observation_shape,
                                        3, config.units)
-        self._bla_decoder = blocks.decoder(observation_type, observation_shape,
-                                           3, config.units)
         self._reward_decoder = blocks.DenseDecoder((), reward_layers, config.units, tf.nn.relu)
         self._terminal_decoder = blocks.DenseDecoder(
             (), terminal_layers, config.units, tf.nn.relu, 'bernoulli')
