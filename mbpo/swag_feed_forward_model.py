@@ -25,6 +25,9 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
         self._posterior_decoder = tf.keras.Sequential(
             [tf.keras.layers.Dense(config.units, tf.nn.relu) for _ in range(1)] +
             [tf.keras.layers.Dense(2 * config.stochastic_size)])
+        self._prior_decoder = tf.keras.Sequential(
+            [tf.keras.layers.Dense(config.units, tf.nn.relu) for _ in range(1)] +
+            [tf.keras.layers.Dense(2 * config.stochastic_size)])
         observation_type = 'image_logits' if config.observation_type in \
                                              ['rgb_image', 'binary_image'] else 'dense_logits'
         self._decoder = blocks.decoder(observation_type, observation_shape,
@@ -32,50 +35,6 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
         self._reward_decoder = blocks.DenseDecoder((), reward_layers, config.units, tf.nn.relu)
         self._terminal_decoder = blocks.DenseDecoder(
             (), terminal_layers, config.units, tf.nn.relu, 'bernoulli')
-
-    def _encode(self, observation, action):
-        x = self._encoder(observation[:, None, ...])
-        x = tf.concat([tf.squeeze(x), action], -1)
-        x = self._posterior_decoder(x)
-        mean, stddev = tf.split(x, 2, -1)
-        stddev = tf.math.softplus(stddev)
-        posterior = tfd.MultivariateNormalDiag(mean, stddev)
-        return posterior
-
-    def _decode(self, z, action):
-        cat = tf.concat([z, action], -1)
-        return self._decoder(cat)
-
-    def _step(self, observation, action):
-        posterior = self._encode(observation, action)
-        z = posterior.sample()
-        decoded = self._decode(z, action)
-        prior = tfd.MultivariateNormalDiag(tf.zeros_like(posterior.mean()),
-                                           tf.ones_like(posterior.stddev()))
-        return prior, posterior, decoded, z
-
-    def _to_distributions(self, stochastics, decoded, action, with_rewards_terminals=True):
-        observation_dist = self._observation_dist(decoded)
-        cat = tf.concat([stochastics, action], -1)
-        if with_rewards_terminals:
-            reward_dist = self._reward_decoder(cat)
-            terminal_dist = self._terminal_decoder(cat)
-        else:
-            # A better idea is a flag that reshapes the rewards and terminals to sequence if needed
-            # instead of just ignoring them.
-            reward_dist = None
-            terminal_dist = None
-        return observation_dist, reward_dist, terminal_dist
-
-    def _observation_dist(self, logits):
-        if self._type == 'rgb_image':
-            observation_dist = tfd.Independent(tfd.Normal(logits, 1.0), len(self._shape))
-        elif self._type == 'binary_image':
-            observation_dist = tfd.Independent(tfd.Bernoulli(
-                logits=logits, dtype=tf.float32), len(self._shape))
-        else:
-            raise RuntimeError("Output type is wrong.")
-        return observation_dist
 
     def _update_beliefs(self, prev_action, current_observation):
         pass
@@ -120,25 +79,84 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
         observation = initial_observation
         for t in range(horizon):
             action = actions[:, t]
-            prior, posterior, decoded, z = self._step(observation, action)
-            observation = self._observation_dist(decoded).mode() if \
-                next_observations is None else next_observations[:, t]
+            if next_observations is None:
+                prior, decoded, z = self._generation_step(observation, action)
+            else:
+                prior, posterior, decoded, z = self._inference_step(
+                    observation,
+                    next_observations[:, t], action)
+                inferred['posterior_mus'] = inferred['posterior_mus'].write(t, posterior.mean())
+                inferred['posterior_stddevs'] = inferred['posterior_stddevs'].write(
+                    t, posterior.stddev())
             observation = tf.stop_gradient(observation) if stop_gradient else observation
             inferred['decoded'] = inferred['decoded'].write(t, decoded)
             inferred['stochastics'] = inferred['stochastics'].write(t, z)
             inferred['prior_mus'] = inferred['prior_mus'].write(t, prior.mean())
             inferred['prior_stddevs'] = inferred['prior_stddevs'].write(t, prior.stddev())
-            inferred['posterior_mus'] = inferred['posterior_mus'].write(t, posterior.mean())
-            inferred['posterior_stddevs'] = inferred['posterior_stddevs'].write(
-                t, posterior.stddev())
         stacked = {k: tf.transpose(v.stack(),
-                                   [1, 0, 2]) for k, v in inferred.items() if k != 'decoded'}
+                                   [1, 0, 2]) for k, v in inferred.items()
+                   if k not in ['decoded', 'posterior_mus', 'posterior_stddevs']}
         stacked['decoded'] = tf.transpose(inferred['decoded'].stack(), [1, 0, 2, 3, 4])
         prior = tfd.MultivariateNormalDiag(stacked['prior_mus'],
                                            stacked['prior_stddevs'])
-        posterior = tfd.MultivariateNormalDiag(stacked['posterior_mus'],
-                                               stacked['posterior_stddevs'])
+        if next_observations is not None:
+            stacked['posterior_mus'] = tf.transpose(inferred['posterior_mus'].stack(), [1, 0, 2])
+            stacked['posterior_stddevs'] = \
+                tf.transpose(inferred['posterior_stddevs'].stack(), [1, 0, 2])
+            posterior = tfd.MultivariateNormalDiag(
+                stacked['posterior_mus'],
+                stacked['posterior_stddevs'])
+        else:
+            posterior = None
         return prior, posterior, stacked['decoded'], stacked['stochastics']
+
+    def _inference_step(self, observation, next_observation, action):
+        obs_embd = tf.squeeze(self._encoder(observation[:, None, ...]))
+        inputs = tf.concat([obs_embd, action], -1)
+        next_obs_embd = tf.squeeze(self._encoder(next_observation[:, None, ...]))
+        x = self._posterior_decoder(tf.concat([inputs, next_obs_embd], -1))
+        posterior_mean, posterior_stddev = tf.split(x, 2, -1)
+        posterior_stddev = tf.math.softplus(posterior_stddev)
+        posterior = tfd.MultivariateNormalDiag(posterior_mean, posterior_stddev)
+        z = posterior.sample()
+        decoded = self._decoder(z)
+        prior_mean, prior_stddev = tf.split(self._prior_decoder(inputs), 2, -1)
+        prior_stddev = tf.math.softplus(prior_stddev)
+        prior = tfd.MultivariateNormalDiag(prior_mean, prior_stddev)
+        return prior, posterior, decoded, z
+
+    def _generation_step(self, observation, action):
+        obs_embd = tf.squeeze(self._encoder(observation[:, None, ...]))
+        inputs = tf.concat([obs_embd, action], -1)
+        prior_mean, prior_stddev = tf.split(self._prior_decoder(inputs), 2, -1)
+        prior_stddev = tf.math.softplus(prior_stddev)
+        prior = tfd.MultivariateNormalDiag(prior_mean, prior_stddev)
+        z = prior.sample()
+        decoded = self._decoder(z)
+        return prior, decoded, z
+
+    def _to_distributions(self, stochastics, decoded, action, with_rewards_terminals=True):
+        observation_dist = self._observation_dist(decoded)
+        cat = tf.concat([stochastics, action], -1)
+        if with_rewards_terminals:
+            reward_dist = self._reward_decoder(cat)
+            terminal_dist = self._terminal_decoder(cat)
+        else:
+            # A better idea is a flag that reshapes the rewards and terminals to sequence if needed
+            # instead of just ignoring them.
+            reward_dist = None
+            terminal_dist = None
+        return observation_dist, reward_dist, terminal_dist
+
+    def _observation_dist(self, logits):
+        if self._type == 'rgb_image':
+            observation_dist = tfd.Independent(tfd.Normal(logits, 1.0), len(self._shape))
+        elif self._type == 'binary_image':
+            observation_dist = tfd.Independent(tfd.Bernoulli(
+                logits=logits, dtype=tf.float32), len(self._shape))
+        else:
+            raise RuntimeError("Output type is wrong.")
+        return observation_dist
 
     @tf.function
     def _training_step(self, batch, log_sequences):
@@ -147,9 +165,11 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
         with tf.GradientTape() as model_tape:
             if self._n_step_loss:
                 prior, posterior, decoded, z = self._unroll_sequence(
-                    observations[:, 0], tf.shape(next_observations)[1], actions=actions)
+                    observations[:, 0], tf.shape(next_observations)[1],
+                    actions=actions, next_observations=next_observations)
             else:
-                prior, posterior, decoded, z = self._step(observations, actions)
+                prior, posterior, decoded, z = self._inference_step(
+                    observations, next_observations, actions)
             next_observation, reward, terminal = self._to_distributions(z, decoded, actions)
             log_p_observations = tf.reduce_mean(next_observation.log_prob(next_observations))
             log_p_rewards = tf.reduce_mean(reward.log_prob(rewards))
