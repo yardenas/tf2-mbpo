@@ -22,6 +22,8 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
         self._stochastic_size = config.stochastic_size
         self._encoder = blocks.encoder(config.observation_type,
                                        observation_shape, 3, config.units)
+        self._bla_encoder = blocks.encoder(config.observation_type,
+                                           observation_shape, 3, config.units)
         self._posterior_decoder = tf.keras.Sequential(
             [tf.keras.layers.Dense(config.units, tf.nn.relu) for _ in range(1)] +
             [tf.keras.layers.Dense(2 * config.stochastic_size)])
@@ -32,6 +34,8 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
                                              ['rgb_image', 'binary_image'] else 'dense_logits'
         self._decoder = blocks.decoder(observation_type, observation_shape,
                                        3, config.units)
+        self._bla_decoder = blocks.decoder(observation_type, observation_shape,
+                                           3, config.units)
         self._reward_decoder = blocks.DenseDecoder((), reward_layers, config.units, tf.nn.relu)
         self._terminal_decoder = blocks.DenseDecoder(
             (), terminal_layers, config.units, tf.nn.relu, 'bernoulli')
@@ -121,12 +125,12 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
         posterior_mean, posterior_stddev = tf.split(x, 2, -1)
         posterior_stddev = tf.math.softplus(posterior_stddev)
         posterior = tfd.MultivariateNormalDiag(posterior_mean, posterior_stddev)
-        z = posterior.sample()
-        cat = tf.concat([inputs, z], -1)
-        decoded = self._decoder(cat)
         prior_mean, prior_stddev = tf.split(self._prior_decoder(inputs), 2, -1)
         prior_stddev = tf.math.softplus(prior_stddev)
         prior = tfd.MultivariateNormalDiag(prior_mean, prior_stddev)
+        z = 0.5 * posterior.sample() + 0.5 * prior.sample()
+        cat = tf.concat([inputs, z], -1)
+        decoded = self._decoder(cat)
         return prior, posterior, decoded, z
 
     def _generation_step(self, observation, action):
@@ -180,7 +184,7 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
             log_p_rewards = tf.reduce_mean(reward.log_prob(rewards))
             log_p_terminals = tf.reduce_mean(terminal.log_prob(terminals))
             kl = tf.reduce_mean(tfd.kl_divergence(posterior, prior))
-            loss = tf.maximum(3.0, kl) - log_p_observations - log_p_rewards - log_p_terminals
+            loss = tf.maximum(1.5, kl) - log_p_observations - log_p_rewards - log_p_terminals
         grads = model_tape.gradient(loss, self.trainable_variables)
         self._optimizer.apply_gradients(zip(grads, self.trainable_variables))
         self._logger['observation_log_p'].update_state(-log_p_observations)
