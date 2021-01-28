@@ -113,8 +113,8 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
         return prior, posterior, stacked['decoded'], stacked['stochastics']
 
     def _inference_step(self, observation, next_observation, action):
-        obs_cat = tf.concat([observation[:, None, ...], next_observation[:, None, ...]], 1)
-        obs_embd, next_obs_embd = tf.split(self._encoder(obs_cat), 2, 1)
+        obs_embd = tf.squeeze(self._encoder(observation[:, None, ...]))
+        next_obs_embd = tf.squeeze(self._encoder(next_observation[:, None, ...]))
         inputs = tf.concat([obs_embd, action], -1)
         x = self._posterior_decoder(tf.concat([inputs, next_obs_embd], -1))
         posterior_mean, posterior_stddev = tf.split(x, 2, -1)
