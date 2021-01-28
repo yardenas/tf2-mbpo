@@ -69,7 +69,7 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
         return stacked_all, {'stochastic': stacked_all, 'deterministic': stacked_all}
 
     def _unroll_sequence(self, initial_observation, horizon, actions, next_observations=None,
-                         stop_gradient=True):
+                         stop_gradient=True, training=False):
         inferred = {'prior_mus': tf.TensorArray(tf.float32, horizon),
                     'prior_stddevs': tf.TensorArray(tf.float32, horizon),
                     'posterior_mus': tf.TensorArray(tf.float32, horizon),
@@ -89,7 +89,8 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
                 inferred['posterior_mus'] = inferred['posterior_mus'].write(t, posterior.mean())
                 inferred['posterior_stddevs'] = inferred['posterior_stddevs'].write(
                     t, posterior.stddev())
-                observation = next_observations[:, t]
+                observation = next_observations[:, t] if not training \
+                    else self._observation_dist(decoded).mode()
             observation = tf.stop_gradient(observation) if stop_gradient else observation
             inferred['decoded'] = inferred['decoded'].write(t, decoded)
             inferred['stochastics'] = inferred['stochastics'].write(t, z)
@@ -168,7 +169,7 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
             if self._n_step_loss:
                 prior, posterior, decoded, z = self._unroll_sequence(
                     observations[:, 0], tf.shape(next_observations)[1],
-                    actions=actions, next_observations=next_observations)
+                    actions=actions, next_observations=next_observations, training=True)
             else:
                 prior, posterior, decoded, z = self._inference_step(
                     observations, next_observations, actions)
