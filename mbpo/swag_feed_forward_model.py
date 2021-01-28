@@ -75,9 +75,10 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
         samples_reconstructed = []
         for _ in range(self._posterior_samples):
             self._optimizer.sample_and_assign(1.0, self.trainable_variables)
-            _, _, sequence, _ = self._unroll_sequence(initial_belief['deterministic'], horizon,
-                                                      actions=actions)
-            samples_reconstructed.append(sequence)
+            _, _, decoded, z = self._unroll_sequence(initial_belief['deterministic'],
+                                                     horizon, actions=actions)
+            next_observation, _, _ = self._to_distributions(z, decoded, actions)
+            samples_reconstructed.append(next_observation.mean())
         stacked_all = tf.stack(samples_reconstructed, 0)
         return {'stochastic': stacked_all, 'deterministic': stacked_all}, stacked_all
 
@@ -89,13 +90,12 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
         actions = batch['action']
         for i in range(self._posterior_samples):
             self._optimizer.sample_and_assign(1.0, self.trainable_variables)
-            _, _, sequence, _ = self._unroll_sequence(initial_observation,
-                                                      tf.shape(next_observations)[1],
-                                                      actions,
-                                                      next_observations)
-            samples_reconstructed.append(sequence)
-            mse = tf.reduce_mean(tf.math.squared_difference(next_observations, sequence))
-            self._logger['test_observation_' + str(i)].update_state(mse)
+            _, _, decoded, z = self._unroll_sequence(initial_observation,
+                                                     tf.shape(next_observations)[1],
+                                                     actions,
+                                                     next_observations)
+            next_observation, _, _ = self._to_distributions(z, decoded, actions)
+            samples_reconstructed.append(next_observation.mean())
         stacked_all = tf.stack(samples_reconstructed, 0)
         return stacked_all, {'stochastic': stacked_all, 'deterministic': stacked_all}
 
