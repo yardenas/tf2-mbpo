@@ -19,7 +19,7 @@ class SwagMultistepModel(BayesianWorldModel):
             tf.optimizers.Adam(
                 config.model_learning_rate,
                 clipnorm=config.grad_clip_norm),
-            2000, 5)
+            5000, 5)
         self._posterior_samples = config.posterior_samples
         self._head = tf.keras.Sequential(
             [tf.keras.layers.Dense(config.units, tf.nn.relu) for _ in range(2)] +
