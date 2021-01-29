@@ -22,6 +22,8 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
         self._stochastic_size = config.stochastic_size
         self._encoder = blocks.encoder(config.observation_type,
                                        observation_shape, 3, config.units)
+        self._deterministic_encoder = blocks.encoder(config.observation_type,
+                                                     observation_shape, 3, config.units)
         self._posterior_decoder = tf.keras.Sequential(
             [tf.keras.layers.Dense(config.units, tf.nn.relu) for _ in range(1)] +
             [tf.keras.layers.Dense(2 * config.stochastic_size)])
@@ -32,6 +34,8 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
                                              ['rgb_image', 'binary_image'] else 'dense_logits'
         self._decoder = blocks.decoder(observation_type, observation_shape,
                                        3, config.units)
+        self._deterministic_decoder = blocks.decoder(config.observation_type, observation_shape,
+                                                     3, config.units)
         self._reward_decoder = blocks.DenseDecoder((), reward_layers, config.units, tf.nn.relu)
         self._terminal_decoder = blocks.DenseDecoder(
             (), terminal_layers, config.units, tf.nn.relu, 'bernoulli')
@@ -113,30 +117,44 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
             posterior = None
         return prior, posterior, stacked['decoded'], stacked['stochastics']
 
+    def _deterministic_step(self, observation, action):
+        obs_embds = self._deterministic_encoder(observation)
+        cat = tf.concat([obs_embds, action], -1)
+        return self._deterministic_decoder(cat)
+
+    # http://cs231n.stanford.edu/reports/2016/pdfs/215_Report.pdf
+    # "Stochastic Video Prediction with Conditional Density Estimation"
     def _inference_step(self, observation, next_observation, action):
-        obs_embd = tf.squeeze(self._encoder(observation[:, None, ...]))
-        next_obs_embd = tf.squeeze(self._encoder(next_observation[:, None, ...]))
-        inputs = tf.concat([obs_embd, action], -1)
-        x = self._posterior_decoder(tf.concat([inputs, next_obs_embd], -1))
-        posterior_mean, posterior_stddev = tf.split(x, 2, -1)
+        y_hat = tf.stop_gradient(self._deterministic_step(observation[:, None, ...],
+                                                          action[:, None, ...]).mode())
+        cat = tf.concat([observation[:, None, ...], y_hat, next_observation[:, None, ...]], 1)
+        obs_embd, y_hat_embd, next_obs_embd = [tf.squeeze(v) for v in tf.split(
+            self._encoder(cat), 3, 1)]
+        inputs = tf.concat([tf.squeeze(obs_embd), action], -1)
+        posterior_features = self._posterior_decoder(tf.concat(
+            [inputs, next_obs_embd], -1))
+        posterior_mean, posterior_stddev = tf.split(posterior_features, 2, -1)
         posterior_stddev = tf.math.softplus(posterior_stddev)
         posterior = tfd.MultivariateNormalDiag(posterior_mean, posterior_stddev)
-        prior_mean, prior_stddev = tf.split(self._prior_decoder(inputs), 2, -1)
+        prior_mean, prior_stddev = tf.split(self._prior_decoder(tf.concat(
+            [inputs, y_hat_embd], -1)), 2, -1)
         prior_stddev = tf.math.softplus(prior_stddev)
         prior = tfd.MultivariateNormalDiag(prior_mean, prior_stddev)
-        z = 0.5 * posterior.sample() + 0.5 * prior.sample()
-        cat = tf.concat([inputs, z], -1)
-        decoded = self._decoder(cat)
+        z = posterior.sample()
+        decoded = self._decoder(tf.concat([z, inputs], -1))
         return prior, posterior, decoded, z
 
     def _generation_step(self, observation, action):
-        obs_embd = tf.squeeze(self._encoder(observation[:, None, ...]))
+        y_hat = tf.stop_gradient(self._deterministic_step(observation[:, None, ...], action).mode())
+        obs_embd, y_hat_embd = tf.split(self._encoder(tf.concat(
+            [observation[:, None, ...], y_hat], -1)), 2, 1)
         inputs = tf.concat([obs_embd, action], -1)
-        prior_mean, prior_stddev = tf.split(self._prior_decoder(inputs), 2, -1)
+        prior_mean, prior_stddev = tf.split(self._prior_decoder(tf.concat(
+            [inputs, y_hat_embd], -1)), 2, -1)
         prior_stddev = tf.math.softplus(prior_stddev)
         prior = tfd.MultivariateNormalDiag(prior_mean, prior_stddev)
         z = prior.sample()
-        cat = tf.concat([inputs, z], -1)
+        cat = tf.concat([z, inputs], -1)
         decoded = self._decoder(cat)
         return prior, decoded, z
 
@@ -172,15 +190,20 @@ class SwagFeedForwardModel(world_models.BayesianWorldModel):
                 prior, posterior, decoded, z = self._unroll_sequence(
                     observations[:, 0], tf.shape(next_observations)[1],
                     actions=actions, next_observations=next_observations, training=True)
+                y_hat_dist = self._deterministic_step(observations, actions)
             else:
                 prior, posterior, decoded, z = self._inference_step(
                     observations, next_observations, actions)
+                y_hat_dist = self._deterministic_step(observations[:, None, ...],
+                                                      actions[:, None, ...])
             next_observation, reward, terminal = self._to_distributions(z, decoded, actions)
             log_p_observations = tf.reduce_mean(next_observation.log_prob(next_observations))
+            log_p_deterministic_observation = tf.reduce_mean(y_hat_dist.log_prob(next_observations))
             log_p_rewards = tf.reduce_mean(reward.log_prob(rewards))
             log_p_terminals = tf.reduce_mean(terminal.log_prob(terminals))
             kl = tf.reduce_mean(tfd.kl_divergence(posterior, prior))
-            loss = tf.maximum(1.5, kl) - log_p_observations - log_p_rewards - log_p_terminals
+            loss = tf.maximum(3.0, kl) - log_p_observations - log_p_rewards - \
+                   log_p_terminals - log_p_deterministic_observation
         grads = model_tape.gradient(loss, self.trainable_variables)
         self._optimizer.apply_gradients(zip(grads, self.trainable_variables))
         self._logger['observation_log_p'].update_state(-log_p_observations)
