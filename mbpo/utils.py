@@ -85,6 +85,10 @@ class TrainingLogger(object):
         self._writer.add_video(name, images, step, fps=fps)
         self._writer.flush()
 
+    def log_figure(self, figure, step=None, name='Evaluation policy'):
+        self._writer.add_figure(name, figure, step)
+        self._writer.flush()
+
 
 def do_episode(agent, training, environment, config, pbar, render, reset_function=None):
     observation = environment.reset() if reset_function is None else reset_function()

@@ -5,13 +5,6 @@ from mbpo.swag import SWAG
 from mbpo.world_models import BayesianWorldModel
 
 
-def multistep_model(config, logger, observation_shape, rnn):
-    if rnn:
-        return SwagRnn(config, logger, observation_shape)
-    else:
-        return SwagFeedForward(config, logger, observation_shape)
-
-
 class SwagMultistepModel(BayesianWorldModel):
     def __init__(self, config, logger, observation_shape):
         super(SwagMultistepModel, self).__init__(config, logger)
@@ -19,7 +12,7 @@ class SwagMultistepModel(BayesianWorldModel):
             tf.optimizers.Adam(
                 config.model_learning_rate,
                 clipnorm=config.grad_clip_norm),
-            5000, 5)
+            2000, 5)
         self._posterior_samples = config.posterior_samples
         self._head = tf.keras.Sequential(
             [tf.keras.layers.Dense(config.units, tf.nn.relu) for _ in range(2)] +
